@@ -12,6 +12,7 @@ import {
 } from '../../validation-core/src';
 import { scanProject } from '../../../plugins/project-scanner/src';
 import { runRuleChecker } from '../../../plugins/rule-checkers/src';
+import { buildUiContract } from '../../../plugins/navigation-decider/src';
 
 function createMockResult(node: WorkflowNodeDef, state: WorkflowRunState, input: JsonObject): WorkflowNodeResult {
   const handledBy = node.skill ?? node.plugin ?? node.plugins ?? 'mock-runner';
@@ -27,6 +28,25 @@ function createMockResult(node: WorkflowNodeDef, state: WorkflowRunState, input:
         uiLibrary: targetProfile?.uiLibrary ?? 'unknown',
         routingMode: targetProfile?.routingMode ?? 'unknown',
         reasons: ['mock runner selected configured target profile'],
+      },
+    };
+  }
+
+  if (node.id === 'page_planning') {
+    const targetProfile = state.context.resolvedTargetProfile;
+    return {
+      ok: true,
+      output: {
+        targetProfile: targetProfile?.id ?? 'unknown',
+        pages: [
+          {
+            name: '示例列表页',
+            pageType: 'list',
+            routeMode: targetProfile?.id === 'wechat-miniapp' ? 'miniapp-page' : 'menu-route',
+            reusedComponents: ['search-panel', 'table-pagination'],
+            dangerActions: ['delete'],
+          },
+        ],
       },
     };
   }
@@ -120,6 +140,29 @@ async function createValidationNodeResult(node: WorkflowNodeDef, state: Workflow
       };
     }
 
+    if (node.plugin === 'navigation-decider') {
+      const targetProfile = state.context.resolvedTargetProfile;
+      const pagePlan = state.nodeResults.page_planning?.output as JsonObject | undefined;
+      const scanReport = state.context.targetProject
+        ? await scanProject({ rootDir: state.context.targetProject })
+        : undefined;
+      const uiContract = buildUiContract({
+        targetProfileId: targetProfile?.id ?? 'unknown',
+        supportedLayouts: Array.isArray(targetProfile?.pagePatterns?.supports)
+          ? (targetProfile?.pagePatterns?.supports as string[])
+          : [],
+        pagePlan: {
+          targetProfile: String(pagePlan?.targetProfile ?? targetProfile?.id ?? 'unknown'),
+          pages: Array.isArray(pagePlan?.pages) ? (pagePlan.pages as never[]) : [],
+        },
+        projectScan: scanReport,
+      });
+      return {
+        ok: true,
+        output: uiContract,
+      };
+    }
+
     const check = runMockValidationPlugin(node.plugin, createValidationContext(node, state));
     return {
       ok: check.report.passed,
@@ -172,7 +215,7 @@ async function main(): Promise<void> {
       return createMockResult(node, state, input);
     },
     async runPlugin(node, input, state) {
-      const runtimePlugins = new Set(['project-scanner', 'playwright-runner', 'visual-regression-runner', 'typecheck']);
+      const runtimePlugins = new Set(['project-scanner', 'navigation-decider', 'playwright-runner', 'visual-regression-runner', 'typecheck']);
       if (node.plugin && runtimePlugins.has(node.plugin)) {
         return createValidationNodeResult(node, state);
       }
