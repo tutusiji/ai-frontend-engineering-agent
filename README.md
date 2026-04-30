@@ -55,6 +55,15 @@
 - n8n 更适合通知、Webhook 和外部系统集成
 - 这个项目真正需要的是具备强契约、重试、校验闸门、目标 profile 与修复回流能力的工作流引擎
 
+## 访问入口
+
+规划中的统一外网入口：`https://joox.cc:4399`
+
+- 通过公网访问
+- 复用 `joox.cc` SSL 证书
+- 入口部署方案见 `docs/deployment-public-entry.md`
+- Nginx 配置草案见 `deploy/nginx/joox-4399.conf`
+
 ## 项目结构
 
 完整设计见 `docs/architecture.md`，第一版可运行骨架见 `workflows/`、`policies/`、`contracts/` 与 `packages/`。

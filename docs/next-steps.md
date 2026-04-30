@@ -17,7 +17,8 @@
 - [x] 让本地 `workflow:mock` 能输出规则检查、E2E、视觉回归的聚合报告
 - [x] 先把 loading、debounce、删除确认 3 类规则检查器从 mock 适配到真实仓库扫描结果
 - [x] 接入诊断型 `playwright-runner`，可识别支持性、配置完整度与测试线索
-- 后续把诊断型 `playwright-runner` 升级为真实执行器，并产出日志、截图与 HTML artifacts
+- [x] 接入诊断型 `visual-regression-runner`，可识别视觉基线、截图目录与视觉测试线索
+- 后续把诊断型 `playwright-runner` / `visual-regression-runner` 升级为真实执行器，并产出日志、截图、diff 图与 HTML artifacts
 
 ## Phase 3：补可视化和审查能力
 

@@ -5,6 +5,7 @@
 - 访问地址：`https://joox.cc:4399`
 - 证书策略：复用 `joox.cc` 的 SSL 证书
 - 对外形态：单域名 + 指定端口，承载 Studio Web、API 反向代理与运行态可视化入口
+- 路径聚合：`/` -> Studio Web，`/api/` -> API，`/events/` -> SSE，`/ws/` -> WebSocket
 
 ## 当前研发进度
 

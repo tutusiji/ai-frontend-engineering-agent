@@ -5,6 +5,7 @@
 - 统一访问入口：`https://joox.cc:4399`
 - TLS 策略：复用 `joox.cc` 的 SSL 证书
 - 建议对外形态：由 Nginx 或等价反向代理承接证书与端口，再转发到 Studio Web、Orchestrator API 与运行时可视化服务
+- 推荐路径聚合：`/` -> Studio Web，`/api/` -> API，`/events/` -> SSE，`/ws/` -> WebSocket
 
 ## 项目定位
 
