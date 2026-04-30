@@ -1,0 +1,14 @@
+interaction:
+  loading:
+    required: true
+  dangerousAction:
+    requireConfirm: true
+  query:
+    debounceMs: 300
+    cancelPreviousRequest: true
+  submit:
+    disableWhilePending: true
+
+review:
+  requireStructuredContracts: true
+  requireValidationBeforeCompletion: true

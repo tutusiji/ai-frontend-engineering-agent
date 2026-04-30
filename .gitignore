@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+.artifacts/
+*.log
+.DS_Store

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ImplementationPlan",
+  "type": "object",
+  "required": ["pageName", "targetProfile", "files"],
+  "properties": {
+    "pageName": { "type": "string" },
+    "targetProfile": { "type": "string" },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "kind"],
+        "properties": {
+          "path": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["view", "page", "component", "composable", "hook", "api", "type", "style", "test"]
+          }
+        }
+      }
+    },
+    "routeChanges": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "componentDependencies": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+testGeneration:
+  generateUnitTests: true
+  generateE2E: true
+  generateVisualChecks: true
+
+coverageRules:
+  listPage:
+    - initialLoad
+    - loadingState
+    - emptyState
+    - searchFlow
+    - paginationFlow
+  formPage:
+    - requiredValidation
+    - dynamicFieldVisibility
+    - submitSuccess
+    - submitFailure
+    - dirtyStateGuard
+  dangerousAction:
+    - confirmShown
+    - cancelFlow
+    - successFlow
+
+visual:
+  baselineRequiredForCorePages: true
+  diffThreshold: 0.03

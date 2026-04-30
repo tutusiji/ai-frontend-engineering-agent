@@ -1,0 +1,32 @@
+dangerActions:
+  delete:
+    requireConfirm: true
+    requireDangerStyle: true
+    requireEntityNameInConfirmText: true
+  unpublish:
+    requireConfirm: true
+  batchOperation:
+    requireConfirmWhenIrreversible: true
+
+feedback:
+  loading:
+    required: true
+    listPageRequired: true
+    submitRequired: true
+  successMessage:
+    requiredAfterMutation: true
+  errorMessage:
+    requiredAfterMutationFailure: true
+
+query:
+  debounceMs: 300
+  minQueryLength: 0
+  requestCancellation: true
+
+form:
+  dirtyCheck:
+    enabled: true
+  asyncValidation:
+    enabled: true
+  submitLock:
+    enabled: true

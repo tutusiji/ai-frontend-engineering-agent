@@ -1,0 +1,31 @@
+id: regression-fix-loop
+name: Regression Fix Loop
+version: 0.2.0
+
+input:
+  schema: validation-report
+
+nodes:
+  - id: classify_failures
+    type: agent
+    skill: code-review-rubric
+    outputSchema: fix-task-list
+
+  - id: targeted_fix
+    type: agent
+    skill: frontend-coding-core
+    dependsOn:
+      - classify_failures
+    outputSchema: generation-report
+
+  - id: rerun_validation
+    type: pluginGroup
+    plugins:
+      - playwright-runner
+      - visual-regression-runner
+    dependsOn:
+      - targeted_fix
+    outputSchema: validation-report
+
+retryPolicy:
+  maxRounds: 3

@@ -1,0 +1,15 @@
+id: pc-spa
+platform: pc-spa
+framework: unknown
+uiLibrary: custom
+routingMode: custom
+styling:
+  - custom
+pagePatterns:
+  supports:
+    - route-page
+    - standalone-page
+    - modal
+validation:
+  visualRegression: true
+  playwright: true

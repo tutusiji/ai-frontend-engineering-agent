@@ -1,0 +1,51 @@
+project:
+  framework: vue3
+  uiLibrary: element-plus
+  styling:
+    - tailwindcss
+    - unocss
+
+page:
+  defaultPageType: route
+  preferExistingPatterns: true
+  requireComposableForPageState: true
+
+routing:
+  menuPage:
+    conditions:
+      - hasList
+      - needsIndependentUrl
+      - hasFrequentEntry
+  modalPage:
+    maxFormFields: 8
+    forbidWhen:
+      - hasComplexTabs
+      - hasMultipleAsyncSections
+      - hasHeavyDynamicForm
+  drawerPage:
+    preferWhen:
+      - needKeepListContext
+      - mediumComplexityEdit
+
+table:
+  useSharedTablePaginationComponent: true
+  requireLoading: true
+  requireEmptyState: true
+  requireErrorState: true
+
+search:
+  useSharedSearchRegionComponent: true
+  debounceMs: 300
+  cancelPreviousRequest: true
+
+form:
+  useElementPlusForm: true
+  disableSubmitWhilePending: true
+  scrollToFirstError: true
+  supportDynamicFieldVisibility: true
+
+componentReuse:
+  preferInternalComponents:
+    - user-selector
+    - search-panel
+    - table-pagination

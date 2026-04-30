@@ -1,0 +1,96 @@
+id: from-chat-to-page
+name: From Chat To Frontend Page
+version: 0.2.0
+
+input:
+  schema: requirement-chat-input
+  fields:
+    - name: userPrompt
+      type: string
+      required: true
+    - name: attachments
+      type: array
+      required: false
+    - name: targetProject
+      type: string
+      required: true
+
+nodes:
+  - id: requirement_analysis
+    type: agent
+    skill: requirement-analysis
+    outputSchema: requirement-spec
+
+  - id: target_profile_selection
+    type: agent
+    skill: target-profile-selection
+    dependsOn:
+      - requirement_analysis
+    outputSchema: target-profile-selection
+
+  - id: page_planning
+    type: agent
+    skill: page-planning
+    dependsOn:
+      - target_profile_selection
+    outputSchema: page-plan
+
+  - id: navigation_decision
+    type: plugin
+    plugin: navigation-decider
+    dependsOn:
+      - page_planning
+    outputSchema: ui-contract
+
+  - id: implementation_plan
+    type: agent
+    skill: frontend-coding-core
+    dependsOn:
+      - navigation_decision
+    outputSchema: implementation-plan
+
+  - id: code_generation
+    type: plugin
+    plugin: page-generator
+    dependsOn:
+      - implementation_plan
+    outputSchema: generation-report
+
+  - id: rule_check
+    type: pluginGroup
+    plugins:
+      - loading-rule-checker
+      - debounce-rule-checker
+      - delete-confirm-rule-checker
+      - pagination-table-rule-checker
+    dependsOn:
+      - code_generation
+    outputSchema: validation-report
+
+  - id: e2e_validation
+    type: plugin
+    plugin: playwright-runner
+    dependsOn:
+      - rule_check
+    when:
+      allPassed: true
+    outputSchema: validation-report
+
+  - id: visual_validation
+    type: plugin
+    plugin: visual-regression-runner
+    dependsOn:
+      - e2e_validation
+    outputSchema: validation-report
+
+  - id: fix_loop
+    type: agent
+    skill: frontend-coding-core
+    dependsOn:
+      - visual_validation
+    when:
+      hasFailures: true
+    outputSchema: generation-report
+
+output:
+  primaryFrom: visual_validation

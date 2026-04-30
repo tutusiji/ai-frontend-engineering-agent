@@ -1,0 +1,21 @@
+id: vue3-admin
+platform: admin-web
+framework: vue3
+uiLibrary: element-plus
+routingMode: vue-router
+styling:
+  - tailwindcss
+  - unocss
+pagePatterns:
+  supports:
+    - route-page
+    - drawer
+    - modal
+    - tab-page
+preferredPlugins:
+  scanner: vue3-project-scanner
+  navigation: route-menu-decider
+  generator: crud-page-generator
+validation:
+  visualRegression: true
+  playwright: true

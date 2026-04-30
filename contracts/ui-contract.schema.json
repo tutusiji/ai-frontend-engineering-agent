@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "UIContract",
+  "type": "object",
+  "required": ["pageName", "targetProfile", "layout", "sections"],
+  "properties": {
+    "pageName": { "type": "string" },
+    "targetProfile": { "type": "string" },
+    "layout": {
+      "type": "string",
+      "enum": ["route-page", "drawer", "modal", "tab-page", "miniapp-page", "standalone-page"]
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["search", "toolbar", "table", "form", "detail", "chart", "footer", "tabs", "hero", "filter"]
+          }
+        }
+      }
+    },
+    "interactions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["action", "rule"],
+        "properties": {
+          "action": { "type": "string" },
+          "rule": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+id: h5-spa
+platform: h5-spa
+framework: unknown
+uiLibrary: custom
+routingMode: custom
+styling:
+  - custom
+pagePatterns:
+  supports:
+    - route-page
+    - standalone-page
+    - tab-page
+validation:
+  visualRegression: true
+  playwright: true

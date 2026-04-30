@@ -1,0 +1,20 @@
+id: react-admin
+platform: admin-web
+framework: react
+uiLibrary: antd
+routingMode: react-router
+styling:
+  - tailwindcss
+pagePatterns:
+  supports:
+    - route-page
+    - drawer
+    - modal
+    - tab-page
+preferredPlugins:
+  scanner: project-scanner
+  navigation: navigation-decider
+  generator: page-generator
+validation:
+  visualRegression: true
+  playwright: true

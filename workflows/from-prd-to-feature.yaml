@@ -1,0 +1,43 @@
+id: from-prd-to-feature
+name: From PRD To Frontend Feature
+version: 0.2.0
+
+input:
+  schema: feature-doc-input
+
+stages:
+  - name: ingest
+    nodes:
+      - doc_parse
+      - requirement_analysis
+
+  - name: planning
+    nodes:
+      - target_profile_selection
+      - page_planning
+      - navigation_decision
+      - test_plan_generation
+
+  - name: implementation
+    nodes:
+      - implementation_plan
+      - code_generation
+
+  - name: validation
+    nodes:
+      - rule_check
+      - typecheck
+      - e2e_validation
+      - visual_validation
+
+  - name: repair
+    nodes:
+      - fix_loop
+
+approvalGates:
+  - afterStage: planning
+    name: product_review
+    required: true
+  - afterStage: validation
+    name: release_review
+    required: false

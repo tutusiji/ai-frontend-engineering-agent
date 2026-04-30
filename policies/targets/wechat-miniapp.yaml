@@ -1,0 +1,13 @@
+id: wechat-miniapp
+platform: miniapp
+framework: native-miniapp
+uiLibrary: native
+routingMode: miniapp-pages
+styling:
+  - wxss
+pagePatterns:
+  supports:
+    - miniapp-page
+validation:
+  visualRegression: limited
+  playwright: false
