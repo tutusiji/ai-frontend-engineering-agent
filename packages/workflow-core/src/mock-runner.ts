@@ -13,6 +13,7 @@ import {
 import { scanProject } from '../../../plugins/project-scanner/src';
 import { runRuleChecker } from '../../../plugins/rule-checkers/src';
 import { buildUiContract } from '../../../plugins/navigation-decider/src';
+import { buildGenerationReport } from '../../../plugins/page-generator/src';
 
 function createMockResult(node: WorkflowNodeDef, state: WorkflowRunState, input: JsonObject): WorkflowNodeResult {
   const handledBy = node.skill ?? node.plugin ?? node.plugins ?? 'mock-runner';
@@ -51,6 +52,24 @@ function createMockResult(node: WorkflowNodeDef, state: WorkflowRunState, input:
     };
   }
 
+  if (node.id === 'implementation_plan') {
+    const targetProfile = state.context.resolvedTargetProfile;
+    const pagePlan = state.nodeResults.page_planning?.output as JsonObject | undefined;
+    const pageName = Array.isArray(pagePlan?.pages)
+      ? String((pagePlan.pages[0] as { name?: string } | undefined)?.name ?? '示例页面')
+      : '示例页面';
+    return {
+      ok: true,
+      output: {
+        pageName,
+        targetProfile: targetProfile?.id ?? 'unknown',
+        files: buildImplementationFiles(targetProfile?.framework as string | undefined, pageName),
+        routeChanges: [buildRouteChangeHint(targetProfile?.framework as string | undefined, pageName)],
+        componentDependencies: ['search-panel', 'table-pagination'],
+      },
+    };
+  }
+
   return {
     ok: true,
     output: {
@@ -66,6 +85,55 @@ function createMockResult(node: WorkflowNodeDef, state: WorkflowRunState, input:
 
 function toJsonValue<T>(value: T): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
+function buildImplementationFiles(framework: string | undefined, pageName: string) {
+  const slug = toKebabCase(pageName);
+  if (framework === 'react') {
+    return [
+      { path: `src/pages/${slug}/index.tsx`, kind: 'page' },
+      { path: `src/pages/${slug}/hooks/use-${slug}-page.ts`, kind: 'hook' },
+      { path: `src/pages/${slug}/service.ts`, kind: 'api' },
+      { path: `src/pages/${slug}/index.test.tsx`, kind: 'test' },
+    ];
+  }
+
+  if (framework === 'native-miniapp') {
+    return [
+      { path: `miniprogram/pages/${slug}/index.ts`, kind: 'page' },
+      { path: `miniprogram/pages/${slug}/index.wxml`, kind: 'view' },
+      { path: `miniprogram/pages/${slug}/index.wxss`, kind: 'style' },
+      { path: `miniprogram/pages/${slug}/index.test.ts`, kind: 'test' },
+    ];
+  }
+
+  return [
+    { path: `src/views/${slug}/index.vue`, kind: 'page' },
+    { path: `src/views/${slug}/use-${slug}-page.ts`, kind: 'composable' },
+    { path: `src/api/${slug}.ts`, kind: 'api' },
+    { path: `src/views/${slug}/index.test.ts`, kind: 'test' },
+  ];
+}
+
+function buildRouteChangeHint(framework: string | undefined, pageName: string): string {
+  const slug = toKebabCase(pageName);
+  if (framework === 'react') {
+    return `在 react-router 配置中注册 /${slug} 页面路由`;
+  }
+  if (framework === 'native-miniapp') {
+    return `在 app.json 中注册 pages/${slug}/index 页面入口`;
+  }
+  return `在 vue-router 菜单路由中注册 /${slug} 页面`;
+}
+
+function toKebabCase(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/[\s_]+/g, '-')
+    .replace(/[^a-zA-Z0-9-\u4e00-\u9fa5]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
 }
 
 function createValidationContext(node: WorkflowNodeDef, state: WorkflowRunState) {
@@ -163,6 +231,29 @@ async function createValidationNodeResult(node: WorkflowNodeDef, state: Workflow
       };
     }
 
+    if (node.plugin === 'page-generator') {
+      const implementationPlan = state.nodeResults.implementation_plan?.output as JsonObject | undefined;
+      const uiContract = state.nodeResults.navigation_decision?.output as JsonObject | undefined;
+      const generationReport = buildGenerationReport({
+        implementationPlan: {
+          pageName: String(implementationPlan?.pageName ?? '示例页面'),
+          targetProfile: String(implementationPlan?.targetProfile ?? 'unknown'),
+          files: Array.isArray(implementationPlan?.files) ? (implementationPlan.files as never[]) : [],
+          routeChanges: Array.isArray(implementationPlan?.routeChanges)
+            ? (implementationPlan.routeChanges as string[])
+            : undefined,
+          componentDependencies: Array.isArray(implementationPlan?.componentDependencies)
+            ? (implementationPlan.componentDependencies as string[])
+            : undefined,
+        },
+        uiContract,
+      });
+      return {
+        ok: true,
+        output: generationReport,
+      };
+    }
+
     const check = runMockValidationPlugin(node.plugin, createValidationContext(node, state));
     return {
       ok: check.report.passed,
@@ -215,7 +306,7 @@ async function main(): Promise<void> {
       return createMockResult(node, state, input);
     },
     async runPlugin(node, input, state) {
-      const runtimePlugins = new Set(['project-scanner', 'navigation-decider', 'playwright-runner', 'visual-regression-runner', 'typecheck']);
+      const runtimePlugins = new Set(['project-scanner', 'navigation-decider', 'page-generator', 'playwright-runner', 'visual-regression-runner', 'typecheck']);
       if (node.plugin && runtimePlugins.has(node.plugin)) {
         return createValidationNodeResult(node, state);
       }

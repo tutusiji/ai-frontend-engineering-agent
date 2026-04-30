@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GenerationReport",
+  "type": "object",
+  "required": ["pageName", "targetProfile", "generatedFiles", "patches"],
+  "properties": {
+    "pageName": { "type": "string" },
+    "targetProfile": { "type": "string" },
+    "generatedFiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "kind", "status"],
+        "properties": {
+          "path": { "type": "string" },
+          "kind": { "type": "string" },
+          "status": { "type": "string", "enum": ["planned", "generated", "skipped"] }
+        }
+      }
+    },
+    "patches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["target", "action", "summary"],
+        "properties": {
+          "target": { "type": "string" },
+          "action": { "type": "string", "enum": ["create", "update", "append"] },
+          "summary": { "type": "string" }
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

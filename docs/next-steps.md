@@ -11,7 +11,8 @@
 ## Phase 2：接真实项目适配器
 
 - [x] 实现最小可用 `project-scanner`，可扫描框架线索、目录结构与规则检查证据
-- 基于真实规则实现导航决策插件
+- [x] 实现最小可用导航决策插件，基于 page plan + profile 能力输出 `UIContract`
+- [x] 实现最小可用 `page-generator`，基于 `ImplementationPlan` 和 `UIContract` 输出 `GenerationReport`
 - [x] 补齐 `validation-core` 包，统一验证结果模型与 mock 校验链路
 - [x] 让本地 `workflow:mock` 能输出规则检查、E2E、视觉回归的聚合报告
 - [x] 先把 loading、debounce、删除确认 3 类规则检查器从 mock 适配到真实仓库扫描结果
