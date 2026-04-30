@@ -15,6 +15,7 @@ import { runRuleChecker } from '../../../plugins/rule-checkers/src';
 import { buildUiContract } from '../../../plugins/navigation-decider/src';
 import { buildGenerationReport } from '../../../plugins/page-generator/src';
 import { buildPlaywrightValidation } from '../../../plugins/playwright-runner/src';
+import { buildVisualRegressionValidation } from '../../../plugins/visual-regression-runner/src';
 
 function createMockResult(node: WorkflowNodeDef, state: WorkflowRunState, input: JsonObject): WorkflowNodeResult {
   const handledBy = node.skill ?? node.plugin ?? node.plugins ?? 'mock-runner';
@@ -190,6 +191,25 @@ async function createValidationNodeResult(node: WorkflowNodeDef, state: Workflow
           };
         }
 
+        if (pluginName === 'visual-regression-runner') {
+          const generationReport = state.nodeResults.code_generation?.output as JsonObject | undefined;
+          const report = await buildVisualRegressionValidation({
+            targetProfileId: state.context.targetProfile?.id ?? 'unknown',
+            targetProject: state.context.targetProject,
+            projectScan: scanReport,
+            generationReport,
+            targetValidation: state.context.resolvedTargetProfile?.validation,
+          });
+          return {
+            name: pluginName,
+            report: report as unknown as ValidationReport,
+            metadata: {
+              mock: false,
+              source: 'visual-regression-runner',
+            },
+          };
+        }
+
         return runMockValidationPlugin(pluginName, createValidationContext(node, state));
       }),
     );
@@ -281,6 +301,27 @@ async function createValidationNodeResult(node: WorkflowNodeDef, state: Workflow
         targetProfileId: state.context.targetProfile?.id ?? 'unknown',
         targetProject: state.context.targetProject,
         projectScan: scanReport,
+        targetValidation: state.context.resolvedTargetProfile?.validation,
+      });
+      const runnerStatus = typeof report.runnerStatus === 'string' ? report.runnerStatus : 'unknown';
+      const blockingStatuses = new Set(['failed']);
+      return {
+        ok: !blockingStatuses.has(runnerStatus),
+        output: report,
+        raw: toJsonValue(report),
+      };
+    }
+
+    if (node.plugin === 'visual-regression-runner') {
+      const scanReport = state.context.targetProject
+        ? await scanProject({ rootDir: state.context.targetProject })
+        : undefined;
+      const generationReport = state.nodeResults.code_generation?.output as JsonObject | undefined;
+      const report = await buildVisualRegressionValidation({
+        targetProfileId: state.context.targetProfile?.id ?? 'unknown',
+        targetProject: state.context.targetProject,
+        projectScan: scanReport,
+        generationReport,
         targetValidation: state.context.resolvedTargetProfile?.validation,
       });
       const runnerStatus = typeof report.runnerStatus === 'string' ? report.runnerStatus : 'unknown';
