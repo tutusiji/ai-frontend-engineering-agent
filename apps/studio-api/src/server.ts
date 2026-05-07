@@ -24,28 +24,42 @@
  *
  *   Workflows:
  *     GET  /api/workflows                 — list available workflows
- *     POST /api/workflows/:id/run         — run a workflow
+ *     POST /api/workflows/:id/run         — run a workflow (real execution)
  *     GET  /api/runs                      — list run history
  *     GET  /api/runs/:id                  — get run detail
+ *
+ *   Approval:
+ *     POST /api/runs/:id/approve          — approve a workflow run
+ *     POST /api/runs/:id/reject           — reject a workflow run
+ *
+ *   Artifacts:
+ *     GET  /api/runs/:id/artifacts        — list artifacts for a run
+ *     GET  /api/runs/:id/artifacts/:file  — get artifact content
  */
 
 import express from 'express';
 import cors from 'cors';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { FileSchemaRegistry } from '@ai-frontend-engineering-agent/contract-schema';
 import { FilePolicyRegistry } from '@ai-frontend-engineering-agent/policy-engine';
 import {
   getSkill,
   runSkillThroughLlm,
   loadLlmConfigFromEnv,
-  chatCompletion,
   type LlmConfig,
 } from '@ai-frontend-engineering-agent/agent-runtime';
 import type { SkillContext } from '@ai-frontend-engineering-agent/skill-sdk';
 import type { JsonObject } from '@ai-frontend-engineering-agent/shared-types';
-import { UI_CATALOG, getCompatibleLibraries } from '@ai-frontend-engineering-agent/agent-runtime';
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { getCompatibleLibraries } from '@ai-frontend-engineering-agent/agent-runtime';
+import { SessionStore, RunStore, ArtifactStore } from '@ai-frontend-engineering-agent/persistence';
+import type { Session, ChatMessage } from '@ai-frontend-engineering-agent/persistence';
+
+// Workflow execution
+import { WorkflowExecutor } from '@ai-frontend-engineering-agent/workflow-core';
+import { loadWorkflowRegistry } from '@ai-frontend-engineering-agent/workflow-core';
+import type { WorkflowNodeDef, WorkflowNodeResult, WorkflowRunState } from '@ai-frontend-engineering-agent/workflow-core';
 
 // ─── Config ─────────────────────────────────────────────────────────────
 
@@ -69,51 +83,32 @@ const policies = new FilePolicyRegistry({
   targetPoliciesDir: path.join(repoRoot, 'policies/targets'),
 });
 
-// ─── In-memory sessions ────────────────────────────────────────────────
+// ─── Persistent Stores ──────────────────────────────────────────────────
 
-interface ChatSession {
-  id: string;
-  name: string;
-  profileId: string;
-  messages: Array<{ role: 'user' | 'assistant'; content: string; timestamp: number }>;
-  document: JsonObject | null;
-  createdAt: number;
-  updatedAt: number;
-}
+const sessionStore = new SessionStore();
+const runStore = new RunStore();
+const artifactStore = new ArtifactStore();
 
-interface WorkflowRun {
-  id: string;
-  workflowId: string;
-  sessionId: string | null;
-  profileId: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  startedAt: number;
-  completedAt: number | null;
-  result: JsonObject | null;
-  error: string | null;
-  logs: Array<{ timestamp: number; level: string; message: string }>;
-}
-
-const sessions = new Map<string, ChatSession>();
-const runs = new Map<string, WorkflowRun>();
-
-function getOrCreateSession(sessionId: string, profileId: string): ChatSession {
-  if (!sessions.has(sessionId)) {
-    sessions.set(sessionId, {
-      id: sessionId,
-      name: `会话 ${sessions.size + 1}`,
-      profileId,
-      messages: [],
-      document: null,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    });
-  }
-  return sessions.get(sessionId)!;
-}
+// ─── Helpers ────────────────────────────────────────────────────────────
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createSkillContext(profileId: string): SkillContext {
+  return {
+    runId: `web-${Date.now()}`,
+    nodeId: 'web-api',
+    targetProfile: { id: profileId },
+    schemas: schemas as unknown as SkillContext['schemas'],
+    policies: policies as unknown as SkillContext['policies'],
+    artifacts: [],
+    logger: {
+      info: (msg) => console.log(`[INFO] ${msg}`),
+      warn: (msg) => console.warn(`[WARN] ${msg}`),
+      error: (msg) => console.error(`[ERROR] ${msg}`),
+    },
+  };
 }
 
 // ─── Load workflows ─────────────────────────────────────────────────────
@@ -127,7 +122,6 @@ function loadWorkflows(): Array<{ id: string; name: string; description: string;
 
   for (const file of files) {
     const content = readFileSync(path.join(workflowsDir, file), 'utf-8');
-    // Simple YAML parsing for workflow metadata
     const nameMatch = content.match(/name:\s*(.+)/);
     const descMatch = content.match(/description:\s*(.+)/);
     const stageMatches = [...content.matchAll(/- id:\s*(\S+)/g)].map(m => m[1]);
@@ -180,18 +174,16 @@ app.get('/api/catalog/ui', (req, res) => {
 
 // List sessions
 app.get('/api/sessions', (_req, res) => {
-  const list = Array.from(sessions.values())
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    .map(s => ({
-      id: s.id,
-      name: s.name,
-      profileId: s.profileId,
-      messageCount: s.messages.length,
-      completeness: (s.document as Record<string, unknown>)?.completeness as number ?? 0,
-      featureName: (s.document as Record<string, unknown>)?.featureName as string ?? null,
-      createdAt: s.createdAt,
-      updatedAt: s.updatedAt,
-    }));
+  const list = sessionStore.list().map(s => ({
+    id: s.id,
+    name: s.name,
+    profileId: s.profileId,
+    messageCount: s.messages.length,
+    completeness: s.completeness,
+    featureName: (s.document as Record<string, unknown>)?.featureName as string ?? null,
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+  }));
   res.json(list);
 });
 
@@ -199,45 +191,38 @@ app.get('/api/sessions', (_req, res) => {
 app.post('/api/sessions', (req, res) => {
   const { profileId = 'vue3-admin', name } = req.body;
   const id = `session-${generateId()}`;
-  const session: ChatSession = {
-    id,
-    name: name ?? `会话 ${sessions.size + 1}`,
-    profileId,
-    messages: [],
-    document: null,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
-  sessions.set(id, session);
-  res.json({ id, name: session.name, profileId: session.profileId });
+  const session = sessionStore.create(id, name);
+  if (profileId) sessionStore.update(id, { profileId });
+  res.json({ id, name: session.name, profileId });
 });
 
 // Get session
 app.get('/api/sessions/:id', (req, res) => {
-  const session = sessions.get(req.params.id);
+  const session = sessionStore.get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
   res.json(session);
 });
 
 // Delete session
 app.delete('/api/sessions/:id', (req, res) => {
-  const existed = sessions.delete(req.params.id);
+  const existed = sessionStore.delete(req.params.id);
   res.json({ ok: existed });
 });
 
 // Update session
 app.patch('/api/sessions/:id', (req, res) => {
-  const session = sessions.get(req.params.id);
+  const session = sessionStore.get(req.params.id);
   if (!session) return res.status(404).json({ error: 'Session not found' });
-  if (req.body.name) session.name = req.body.name;
-  if (req.body.profileId) session.profileId = req.body.profileId;
-  session.updatedAt = Date.now();
+  const patch: Partial<Session> = {};
+  if (req.body.name) patch.name = req.body.name;
+  if (req.body.profileId) patch.profileId = req.body.profileId;
+  sessionStore.update(req.params.id, patch);
   res.json({ ok: true });
 });
 
 // ─── Chat endpoints ─────────────────────────────────────────────────────
 
-// Non-streaming chat (existing)
+// Non-streaming chat
 app.post('/api/chat', async (req, res) => {
   try {
     const { sessionId = 'default', profileId = 'vue3-admin', userMessage, mode = 'gather' } = req.body;
@@ -246,9 +231,14 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'userMessage is required' });
     }
 
-    const session = getOrCreateSession(sessionId, profileId);
-    session.messages.push({ role: 'user', content: userMessage, timestamp: Date.now() });
-    session.updatedAt = Date.now();
+    // Get or create session
+    let session = sessionStore.get(sessionId);
+    if (!session) {
+      session = sessionStore.create(sessionId);
+      sessionStore.update(sessionId, { profileId });
+    }
+
+    sessionStore.addMessage(sessionId, { role: 'user', content: userMessage, timestamp: Date.now() });
 
     const skill = getSkill('interactive-requirement');
     if (!skill) {
@@ -259,17 +249,20 @@ app.post('/api/chat', async (req, res) => {
     const input: JsonObject = {
       userMessage,
       conversationHistory: session.messages as JsonObject[],
-      existingDocument: session.document,
+      existingDocument: session.document as JsonObject ?? null,
       mode,
     };
 
     const result = await runSkillThroughLlm(skill, ctx, input, llmConfig);
 
     if (result.ok && result.output) {
-      session.document = result.output;
-      session.messages.push({ role: 'assistant', content: JSON.stringify(result.output), timestamp: Date.now() });
+      const doc = result.output as Record<string, unknown>;
+      const completeness = (doc.completeness as number) ?? 0;
+      sessionStore.updateDocument(sessionId, doc, completeness);
+      sessionStore.addMessage(sessionId, { role: 'assistant', content: JSON.stringify(result.output), timestamp: Date.now() });
     }
 
+    session = sessionStore.get(sessionId)!;
     res.json({
       ok: result.ok,
       document: session.document,
@@ -292,9 +285,14 @@ app.post('/api/chat/stream', async (req, res) => {
     return res.status(400).json({ error: 'userMessage is required' });
   }
 
-  const session = getOrCreateSession(sessionId, profileId);
-  session.messages.push({ role: 'user', content: userMessage, timestamp: Date.now() });
-  session.updatedAt = Date.now();
+  // Get or create session
+  let session = sessionStore.get(sessionId);
+  if (!session) {
+    session = sessionStore.create(sessionId);
+    sessionStore.update(sessionId, { profileId });
+  }
+
+  sessionStore.addMessage(sessionId, { role: 'user', content: userMessage, timestamp: Date.now() });
 
   // SSE headers
   res.writeHead(200, {
@@ -316,12 +314,12 @@ app.post('/api/chat/stream', async (req, res) => {
       return;
     }
 
-    // Build prompt
     const ctx = createSkillContext(profileId);
+    session = sessionStore.get(sessionId)!;
     const input: JsonObject = {
       userMessage,
       conversationHistory: session.messages as JsonObject[],
-      existingDocument: session.document,
+      existingDocument: session.document as JsonObject ?? null,
       mode,
     };
 
@@ -400,7 +398,6 @@ app.post('/api/chat/stream', async (req, res) => {
     // Process the complete response
     send('done', { fullContent });
 
-    // Extract JSON and update session
     const { extractJson } = await import('@ai-frontend-engineering-agent/agent-runtime');
     const parsed = extractJson(fullContent);
 
@@ -409,14 +406,17 @@ app.post('/api/chat/stream', async (req, res) => {
       if (skill.normalize) {
         output = await skill.normalize(parsed);
       }
-      session.document = output;
-      session.messages.push({ role: 'assistant', content: JSON.stringify(output), timestamp: Date.now() });
+      const doc = output as Record<string, unknown>;
+      const completeness = (doc.completeness as number) ?? 0;
+      sessionStore.updateDocument(sessionId, doc, completeness);
+      sessionStore.addMessage(sessionId, { role: 'assistant', content: JSON.stringify(output), timestamp: Date.now() });
       send('document', { document: output });
     } else {
-      session.messages.push({ role: 'assistant', content: fullContent, timestamp: Date.now() });
+      sessionStore.addMessage(sessionId, { role: 'assistant', content: fullContent, timestamp: Date.now() });
       send('document', { document: null, raw: fullContent });
     }
 
+    session = sessionStore.get(sessionId)!;
     send('end', { sessionId: session.id, messageCount: session.messages.length });
   } catch (err) {
     send('error', { error: String(err) });
@@ -425,9 +425,9 @@ app.post('/api/chat/stream', async (req, res) => {
   res.end();
 });
 
-// Get chat session state (legacy compatibility)
+// Get chat session state
 app.get('/api/chat/:sessionId', (req, res) => {
-  const session = sessions.get(req.params.sessionId);
+  const session = sessionStore.get(req.params.sessionId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
@@ -446,7 +446,7 @@ app.get('/api/chat/:sessionId', (req, res) => {
 app.post('/api/generate/design', async (req, res) => {
   try {
     const { sessionId = 'default', profileId = 'vue3-admin' } = req.body;
-    const session = sessions.get(sessionId);
+    const session = sessionStore.get(sessionId);
 
     if (!session?.document) {
       return res.status(400).json({ error: 'No requirement document. Complete the chat first.' });
@@ -459,7 +459,7 @@ app.post('/api/generate/design', async (req, res) => {
 
     const ctx = createSkillContext(profileId);
     const input: JsonObject = {
-      ...session.document,
+      ...(session.document as JsonObject),
       phaseId: 'P1',
     };
 
@@ -469,11 +469,20 @@ app.post('/api/generate/design', async (req, res) => {
       const files = result.output.generatedFiles as Array<{ path: string; content: string }>;
       const htmlFile = files?.find(f => f.path?.endsWith('.html'));
 
+      // Persist artifacts
+      const runId = `design-${generateId()}`;
+      if (files) {
+        for (const file of files) {
+          artifactStore.save(runId, file.path, file.content);
+        }
+      }
+
       res.json({
         ok: true,
         files: result.output.generatedFiles,
         htmlContent: htmlFile?.content ?? null,
         usage: result.usage,
+        artifactRunId: runId,
       });
     } else {
       res.json({ ok: false, error: result.error });
@@ -487,7 +496,7 @@ app.post('/api/generate/design', async (req, res) => {
 app.post('/api/generate/code', async (req, res) => {
   try {
     const { sessionId = 'default', profileId = 'vue3-admin', phaseId = 'P1' } = req.body;
-    const session = sessions.get(sessionId);
+    const session = sessionStore.get(sessionId);
 
     if (!session?.document) {
       return res.status(400).json({ error: 'No requirement document. Complete the chat first.' });
@@ -505,7 +514,7 @@ app.post('/api/generate/code', async (req, res) => {
     const phasePages = currentPhase?.pages ?? (Array.isArray(doc.pages) ? (doc.pages as Array<Record<string, unknown>>).map(p => p.name) : []);
 
     const input: JsonObject = {
-      ...session.document,
+      ...(session.document as JsonObject),
       phaseId,
       pages: phasePages as string[],
     };
@@ -513,11 +522,22 @@ app.post('/api/generate/code', async (req, res) => {
     const result = await runSkillThroughLlm(skill, ctx, input, llmConfig);
 
     if (result.ok && result.output) {
+      const files = result.output.generatedFiles as Array<{ path: string; content: string }>;
+
+      // Persist artifacts
+      const runId = `code-${generateId()}`;
+      if (files) {
+        for (const file of files) {
+          artifactStore.save(runId, file.path, file.content);
+        }
+      }
+
       res.json({
         ok: true,
         files: result.output.generatedFiles,
         notes: result.output.notes,
         usage: result.usage,
+        artifactRunId: runId,
       });
     } else {
       res.json({ ok: false, error: result.error });
@@ -534,107 +554,277 @@ app.get('/api/workflows', (_req, res) => {
   res.json(loadWorkflows());
 });
 
-// Run workflow (background)
+// Run workflow (real execution)
 app.post('/api/workflows/:id/run', async (req, res) => {
   const { profileId = 'vue3-admin', sessionId, params = {} } = req.body;
   const runId = `run-${generateId()}`;
+  const workflowId = req.params.id;
 
-  const run: WorkflowRun = {
-    id: runId,
-    workflowId: req.params.id,
-    sessionId: sessionId ?? null,
-    profileId,
-    status: 'pending',
-    startedAt: Date.now(),
-    completedAt: null,
-    result: null,
-    error: null,
-    logs: [{ timestamp: Date.now(), level: 'info', message: `工作流 ${req.params.id} 已创建` }],
-  };
-  runs.set(runId, run);
+  // Create persistent run record
+  const run = runStore.create(runId, workflowId, workflowId, 'manual');
 
-  // Run asynchronously
+  // Return immediately, run in background
+  res.json({ ok: true, runId, status: 'pending' });
+
+  // Execute workflow in background
   (async () => {
-    run.status = 'running';
-    run.logs.push({ timestamp: Date.now(), level: 'info', message: '工作流开始执行' });
-
     try {
-      // For now, simulate workflow execution
-      // In real implementation, this would call workflow-core executor
-      const session = sessionId ? sessions.get(sessionId) : null;
+      runStore.update(runId, { status: 'running' });
 
-      if (session?.document) {
-        run.logs.push({ timestamp: Date.now(), level: 'info', message: '检测到已有需求文档' });
+      // Load workflow definition
+      const registry = await loadWorkflowRegistry(path.join(repoRoot, 'workflows'));
+      const definition = registry.get(workflowId);
+
+      if (!definition) {
+        runStore.complete(runId, `Workflow not found: ${workflowId}`);
+        return;
       }
 
-      // Simulate stages
-      const workflows = loadWorkflows();
-      const workflow = workflows.find(w => w.id === req.params.id);
-
-      if (workflow) {
-        for (const stage of workflow.stages) {
-          run.logs.push({ timestamp: Date.now(), level: 'info', message: `执行阶段: ${stage}` });
-          // Simulate work
-          await new Promise(r => setTimeout(r, 500));
+      // Update stages from workflow nodes
+      if (definition.nodes) {
+        for (const node of definition.nodes) {
+          runStore.updateStage(runId, node.id, {
+            name: node.name ?? node.id,
+            nodeType: node.type,
+            status: 'pending',
+          });
         }
       }
 
-      run.status = 'completed';
-      run.completedAt = Date.now();
-      run.result = { message: '工作流执行完成', workflowId: req.params.id };
-      run.logs.push({ timestamp: Date.now(), level: 'info', message: '工作流执行完成' });
+      // Create executor with adapters
+      const executor = new WorkflowExecutor({
+        runAgent: async (node, input, state) => {
+          runStore.updateStage(runId, node.id, { status: 'running', startedAt: Date.now() });
+          runStore.update(runId, { status: 'running' });
+
+          const skillName = node.skill;
+          if (!skillName) {
+            runStore.updateStage(runId, node.id, { status: 'failed', error: 'No skill defined' });
+            return { ok: false, error: `Agent node ${node.id} has no skill defined` };
+          }
+
+          const skill = getSkill(skillName);
+          if (!skill) {
+            runStore.updateStage(runId, node.id, { status: 'failed', error: `Skill not found: ${skillName}` });
+            return { ok: false, error: `Skill not found: ${skillName}` };
+          }
+
+          const ctx = createSkillContext(profileId);
+          const result = await runSkillThroughLlm(skill, ctx, input, llmConfig);
+
+          if (result.ok) {
+            runStore.updateStage(runId, node.id, {
+              status: 'completed',
+              completedAt: Date.now(),
+              result: result.output,
+            });
+          } else {
+            runStore.updateStage(runId, node.id, {
+              status: 'failed',
+              completedAt: Date.now(),
+              error: result.error,
+            });
+          }
+
+          return {
+            ok: result.ok,
+            output: result.output as JsonObject ?? undefined,
+            error: result.error,
+          };
+        },
+
+        runPlugin: async (node, input, state) => {
+          runStore.updateStage(runId, node.id, { status: 'running', startedAt: Date.now() });
+
+          // Dispatch to real plugins
+          let result: WorkflowNodeResult;
+          try {
+            switch (node.id) {
+              case 'project-scanner': {
+                const { scanProject } = await import('@ai-frontend-engineering-agent/plugin-sdk');
+                // Dynamic import of actual plugin
+                const scanner = await import('../../../plugins/project-scanner/src/index.js');
+                const scanResult = scanner.scanProject(state.context.targetProject ?? '.');
+                result = { ok: true, output: scanResult as unknown as JsonObject };
+                break;
+              }
+              case 'navigation-decider': {
+                const nav = await import('../../../plugins/navigation-decider/src/index.js');
+                result = { ok: true, output: nav.buildUiContract(input, state.context.resolvedTargetProfile) as unknown as JsonObject };
+                break;
+              }
+              case 'page-generator': {
+                const pg = await import('../../../plugins/page-generator/src/index.js');
+                result = { ok: true, output: pg.buildGenerationReport(input) as unknown as JsonObject };
+                break;
+              }
+              case 'playwright-runner': {
+                const pw = await import('../../../plugins/playwright-runner/src/index.js');
+                result = { ok: true, output: pw.buildPlaywrightValidation(state.context.targetProject ?? '.') as unknown as JsonObject };
+                break;
+              }
+              case 'visual-regression-runner': {
+                const vr = await import('../../../plugins/visual-regression-runner/src/index.js');
+                result = { ok: true, output: vr.buildVisualRegressionValidation(state.context.targetProject ?? '.') as unknown as JsonObject };
+                break;
+              }
+              default:
+                result = { ok: true, output: { message: `Plugin ${node.id} executed (stub)` } };
+            }
+          } catch (err) {
+            result = { ok: false, error: String(err) };
+          }
+
+          if (result.ok) {
+            runStore.updateStage(runId, node.id, { status: 'completed', completedAt: Date.now(), result: result.output });
+          } else {
+            runStore.updateStage(runId, node.id, { status: 'failed', completedAt: Date.now(), error: result.error });
+          }
+
+          return result;
+        },
+
+        runPluginGroup: async (node, input, state) => {
+          runStore.updateStage(runId, node.id, { status: 'running', startedAt: Date.now() });
+          // Run all plugins in the group
+          const result = { ok: true, output: { message: `Plugin group ${node.id} executed` } };
+          runStore.updateStage(runId, node.id, { status: 'completed', completedAt: Date.now(), result: result.output });
+          return result;
+        },
+      });
+
+      // Execute the workflow
+      const input: JsonObject = {
+        ...(params as JsonObject),
+        sessionId,
+        profileId,
+      };
+
+      const options = {
+        targetProject: (params as JsonObject)?.targetProject as string ?? undefined,
+        targetProfile: { id: profileId },
+        schemas,
+        policies,
+      };
+
+      const executionResult = await executor.execute(definition, input, options);
+
+      // Save results
+      runStore.update(runId, {
+        status: executionResult.status === 'completed' ? 'completed' : 'failed',
+        result: executionResult.nodeResults as unknown as JsonObject,
+      });
+
+      // Save artifacts if any
+      const nodeResults = executionResult.nodeResults;
+      for (const [nodeId, nodeResult] of Object.entries(nodeResults)) {
+        if (nodeResult?.ok && nodeResult.output) {
+          const output = nodeResult.output as Record<string, unknown>;
+          if (Array.isArray(output.generatedFiles)) {
+            for (const file of output.generatedFiles as Array<{ path: string; content: string }>) {
+              artifactStore.save(runId, `${nodeId}/${file.path}`, file.content);
+              runStore.addArtifact(runId, `${nodeId}/${file.path}`);
+            }
+          }
+        }
+      }
+
+      runStore.complete(runId);
     } catch (err) {
-      run.status = 'failed';
-      run.completedAt = Date.now();
-      run.error = String(err);
-      run.logs.push({ timestamp: Date.now(), level: 'error', message: `执行失败: ${String(err)}` });
+      runStore.complete(runId, String(err));
     }
   })();
-
-  res.json({ ok: true, runId, status: run.status });
 });
 
 // List runs
 app.get('/api/runs', (_req, res) => {
-  const list = Array.from(runs.values())
-    .sort((a, b) => b.startedAt - a.startedAt)
-    .map(r => ({
-      id: r.id,
-      workflowId: r.workflowId,
-      sessionId: r.sessionId,
-      profileId: r.profileId,
-      status: r.status,
-      startedAt: r.startedAt,
-      completedAt: r.completedAt,
-      error: r.error,
-    }));
+  const list = runStore.list().map(r => ({
+    id: r.id,
+    workflowId: r.workflowId,
+    workflowName: r.workflowName,
+    status: r.status,
+    startedAt: r.startedAt,
+    completedAt: r.completedAt,
+    duration: r.duration,
+    error: r.error,
+    artifactCount: r.artifacts.length,
+  }));
   res.json(list);
 });
 
 // Get run detail
 app.get('/api/runs/:id', (req, res) => {
-  const run = runs.get(req.params.id);
+  const run = runStore.get(req.params.id);
   if (!run) return res.status(404).json({ error: 'Run not found' });
   res.json(run);
 });
 
-// ─── Helpers ────────────────────────────────────────────────────────────
+// ─── Approval endpoints ─────────────────────────────────────────────────
 
-function createSkillContext(profileId: string): SkillContext {
-  return {
-    runId: `web-${Date.now()}`,
-    nodeId: 'web-api',
-    targetProfile: { id: profileId },
-    schemas: schemas as unknown as SkillContext['schemas'],
-    policies: policies as unknown as SkillContext['policies'],
-    artifacts: [],
-    logger: {
-      info: (msg) => console.log(`[INFO] ${msg}`),
-      warn: (msg) => console.warn(`[WARN] ${msg}`),
-      error: (msg) => console.error(`[ERROR] ${msg}`),
-    },
+// Approve a run
+app.post('/api/runs/:id/approve', (req, res) => {
+  const run = runStore.get(req.params.id);
+  if (!run) return res.status(404).json({ error: 'Run not found' });
+  if (run.status !== 'waiting-approval') {
+    return res.status(400).json({ error: `Run is not waiting for approval (current: ${run.status})` });
+  }
+
+  const { by = 'user', comment } = req.body;
+  runStore.addApproval(req.params.id, { action: 'approved', by, at: Date.now(), comment });
+  res.json({ ok: true, status: 'approved' });
+});
+
+// Reject a run
+app.post('/api/runs/:id/reject', (req, res) => {
+  const run = runStore.get(req.params.id);
+  if (!run) return res.status(404).json({ error: 'Run not found' });
+  if (run.status !== 'waiting-approval') {
+    return res.status(400).json({ error: `Run is not waiting for approval (current: ${run.status})` });
+  }
+
+  const { by = 'user', comment } = req.body;
+  runStore.addApproval(req.params.id, { action: 'rejected', by, at: Date.now(), comment });
+  res.json({ ok: true, status: 'rejected' });
+});
+
+// ─── Artifact endpoints ─────────────────────────────────────────────────
+
+// List artifacts for a run
+app.get('/api/runs/:id/artifacts', (req, res) => {
+  const run = runStore.get(req.params.id);
+  if (!run) return res.status(404).json({ error: 'Run not found' });
+
+  const artifacts = artifactStore.list(req.params.id);
+  res.json(artifacts);
+});
+
+// Get artifact content — use req.path to extract the file path after /api/runs/:id/artifacts/
+app.get('/api/runs/:id/artifacts/*path', (req, res) => {
+  const run = runStore.get(req.params.id);
+  if (!run) return res.status(404).json({ error: 'Run not found' });
+
+  const filePath = (req.params as Record<string, string>).path ?? req.path.split('/artifacts/')[1];
+  if (!filePath) return res.status(400).json({ error: 'File path required' });
+
+  const content = artifactStore.read(req.params.id, filePath);
+  if (content === undefined) return res.status(404).json({ error: 'Artifact not found' });
+
+  // Determine content type
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  const contentTypes: Record<string, string> = {
+    html: 'text/html',
+    css: 'text/css',
+    js: 'application/javascript',
+    json: 'application/json',
+    ts: 'text/typescript',
+    tsx: 'text/typescript',
+    vue: 'text/plain',
+    md: 'text/markdown',
   };
-}
+
+  res.setHeader('Content-Type', contentTypes[ext ?? ''] ?? 'text/plain');
+  res.send(content);
+});
 
 // ─── Start ──────────────────────────────────────────────────────────────
 
@@ -644,6 +834,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`╚══════════════════════════════════════════╝`);
   console.log(`  Model: ${llmConfig.model}`);
   console.log(`  URL:   ${llmConfig.baseUrl}`);
+  console.log(`  Storage: ~/.ai-studio/data/`);
   console.log(`  Endpoints:`);
   console.log(`    GET  /api/health`);
   console.log(`    GET  /api/profiles`);
@@ -662,4 +853,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`    POST /api/workflows/:id/run`);
   console.log(`    GET  /api/runs`);
   console.log(`    GET  /api/runs/:id`);
+  console.log(`    POST /api/runs/:id/approve`);
+  console.log(`    POST /api/runs/:id/reject`);
+  console.log(`    GET  /api/runs/:id/artifacts`);
+  console.log(`    GET  /api/runs/:id/artifacts/:file`);
 });

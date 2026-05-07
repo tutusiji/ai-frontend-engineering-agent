@@ -1,10 +1,20 @@
 /**
- * CodePanel — generated code file viewer
+ * CodePanel — generated code file viewer with syntax highlighting
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { List, Tag, Typography, Empty } from 'antd';
 import { CodeOutlined, FileOutlined } from '@ant-design/icons';
+import Prism from 'prismjs';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-jsx';
+import 'prismjs/components/prism-tsx';
+import 'prismjs/components/prism-css';
+import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-yaml';
+import 'prismjs/components/prism-markdown';
+import 'prismjs/components/prism-bash';
+import 'prismjs/themes/prism-tomorrow.css';
 
 const { Text } = Typography;
 
@@ -12,6 +22,53 @@ interface CodeFile {
   path: string;
   kind: string;
   content?: string;
+}
+
+function getLanguage(filePath: string): string {
+  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+  const map: Record<string, string> = {
+    ts: 'typescript',
+    tsx: 'tsx',
+    js: 'jsx',
+    jsx: 'jsx',
+    css: 'css',
+    scss: 'css',
+    less: 'css',
+    json: 'json',
+    yaml: 'yaml',
+    yml: 'yaml',
+    md: 'markdown',
+    sh: 'bash',
+    bash: 'bash',
+    vue: 'html',
+    html: 'html',
+  };
+  return map[ext] ?? 'typescript';
+}
+
+function HighlightedCode({ code, language }: { code: string; language: string }) {
+  const codeRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (codeRef.current) {
+      Prism.highlightElement(codeRef.current);
+    }
+  }, [code, language]);
+
+  return (
+    <pre style={{
+      margin: 0,
+      padding: 16,
+      background: '#1e1e1e',
+      borderRadius: 0,
+      fontSize: 13,
+      lineHeight: 1.6,
+    }}>
+      <code ref={codeRef} className={`language-${language}`}>
+        {code}
+      </code>
+    </pre>
+  );
 }
 
 export function CodePanel({ files }: { files: CodeFile[] }) {
@@ -63,18 +120,26 @@ export function CodePanel({ files }: { files: CodeFile[] }) {
       </div>
 
       {/* Code view */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 16, background: '#1e1e1e' }}>
+      <div style={{ flex: 1, overflow: 'auto', background: '#1e1e1e' }}>
         {currentFile?.content ? (
-          <pre style={{
-            color: '#d4d4d4',
-            fontSize: 13,
-            lineHeight: 1.6,
-            margin: 0,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-          }}>
-            <code>{currentFile.content}</code>
-          </pre>
+          <div>
+            <div style={{
+              padding: '8px 16px',
+              background: '#252526',
+              borderBottom: '1px solid #333',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}>
+              <FileOutlined style={{ color: '#569cd6' }} />
+              <Text style={{ color: '#d4d4d4', fontSize: 12 }}>{currentFile.path}</Text>
+              <Tag style={{ marginLeft: 'auto', fontSize: 10 }}>{getLanguage(currentFile.path)}</Tag>
+            </div>
+            <HighlightedCode
+              code={currentFile.content}
+              language={getLanguage(currentFile.path)}
+            />
+          </div>
         ) : (
           <div style={{ textAlign: 'center', padding: 60, color: '#666' }}>
             <FileOutlined style={{ fontSize: 48, marginBottom: 16 }} />

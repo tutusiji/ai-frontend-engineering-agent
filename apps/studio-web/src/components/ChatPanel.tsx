@@ -1,8 +1,8 @@
 /**
- * ChatPanel — chat with SSE streaming support
+ * ChatPanel — chat with SSE streaming + Markdown rendering
  */
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useMemo } from 'react';
 import {
   Input,
   Button,
@@ -14,7 +14,7 @@ import {
   List,
   Space,
   Badge,
-  message,
+  message as antdMessage,
   Select,
 } from 'antd';
 import {
@@ -28,6 +28,8 @@ import {
   StopOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { ChatMessage, RequirementDocument } from '../hooks/useChat';
 
 const { TextArea } = Input;
@@ -50,6 +52,75 @@ interface ChatPanelProps {
   codeLoading: boolean;
 }
 
+/** Check if content looks like JSON (requirement doc) */
+function isJsonDocument(content: string): boolean {
+  try {
+    const parsed = JSON.parse(content);
+    return typeof parsed === 'object' && parsed !== null && (
+      parsed.completeness !== undefined || parsed.featureName !== undefined || parsed.openQuestions !== undefined
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Format a requirement document into readable markdown */
+function formatDocAsMarkdown(doc: RequirementDocument): string {
+  const parts: string[] = [];
+
+  if (doc.featureName) parts.push(`### 📋 ${doc.featureName}`);
+  if (doc.businessGoal) parts.push(`\n**业务目标：** ${doc.businessGoal}`);
+  if (doc.uiLibrary) parts.push(`**UI 组件库：** ${doc.uiLibrary.name}`);
+  if (doc.pages.length > 0) {
+    parts.push(`\n**页面列表：**`);
+    doc.pages.forEach(p => parts.push(`- **${p.name}** (${p.pageType}) — ${p.goal || ''}`));
+  }
+  parts.push(`\n**需求完整度：** ${doc.completeness}%`);
+
+  if (doc.openQuestions.length > 0) {
+    parts.push(`\n**❓ 待确认问题：**`);
+    doc.openQuestions.forEach((q, i) => parts.push(`${i + 1}. ${q}`));
+  }
+
+  if (doc.suggestedNextStep === 'generate-design') {
+    parts.push(`\n💡 *需求已足够完整，可以生成设计稿了*`);
+  } else if (doc.suggestedNextStep === 'start-coding') {
+    parts.push(`\n🚀 *需求已非常完整，可以开始生成代码*`);
+  }
+
+  return parts.join('\n');
+}
+
+/** Render message content with markdown support */
+function MessageContent({ content, isUser }: { content: string; isUser: boolean }) {
+  // For user messages, show plain text
+  if (isUser) {
+    return <span style={{ whiteSpace: 'pre-wrap' }}>{content}</span>;
+  }
+
+  // For assistant messages, try to parse as document JSON first
+  if (isJsonDocument(content)) {
+    try {
+      const doc = JSON.parse(content) as RequirementDocument;
+      const md = formatDocAsMarkdown(doc);
+      return (
+        <div className="chat-markdown">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
+        </div>
+      );
+    } catch {
+      // fall through to plain markdown
+    }
+  }
+
+  // Plain text / markdown content
+  return (
+    <div className="chat-markdown">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    </div>
+  );
+}
+
 export function ChatPanel({
   messages,
   document: doc,
@@ -68,7 +139,9 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
+  // Auto-scroll to bottom on new messages
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamContent]);
@@ -81,7 +154,7 @@ export function ChatPanel({
   };
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Action bar */}
       <div style={{
         padding: '8px 16px',
@@ -90,6 +163,7 @@ export function ChatPanel({
         gap: 8,
         alignItems: 'center',
         background: '#fff',
+        flexShrink: 0,
       }}>
         <ThunderboltOutlined style={{ color: '#1677ff', fontSize: 16 }} />
         <Select
@@ -135,13 +209,22 @@ export function ChatPanel({
         </Button>
       </div>
 
-      {/* Messages */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 16, background: '#f8f9fa' }}>
+      {/* Messages — scrollable area */}
+      <div
+        ref={messagesContainerRef}
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          padding: '16px 24px',
+          background: '#f5f5f5',
+        }}
+      >
         {messages.length === 0 && !streaming && (
-          <div style={{ textAlign: 'center', padding: 60, color: '#999' }}>
+          <div style={{ textAlign: 'center', padding: '80px 40px', color: '#999' }}>
             <RobotOutlined style={{ fontSize: 64, marginBottom: 16 }} />
             <Title level={4} style={{ color: '#999' }}>告诉我你想做什么功能</Title>
-            <Paragraph style={{ color: '#bbb' }}>
+            <Paragraph style={{ color: '#bbb', maxWidth: 400, margin: '0 auto' }}>
               例如: "做一个用户管理后台，包含列表、新增、编辑和删除功能"
             </Paragraph>
           </div>
@@ -156,13 +239,13 @@ export function ChatPanel({
               marginBottom: 16,
             }}
           >
-            <div style={{ maxWidth: '80%', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <div style={{ maxWidth: '85%', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
               {msg.role === 'assistant' && (
                 <div style={{
                   width: 32, height: 32, borderRadius: '50%',
                   background: 'linear-gradient(135deg, #1677ff, #4096ff)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
+                  flexShrink: 0, marginTop: 2,
                 }}>
                   <RobotOutlined style={{ color: '#fff', fontSize: 16 }} />
                 </div>
@@ -170,22 +253,23 @@ export function ChatPanel({
               <div
                 style={{
                   padding: '10px 16px',
-                  borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                  borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '12px 12px 12px 4px',
                   background: msg.role === 'user' ? '#1677ff' : '#fff',
                   color: msg.role === 'user' ? '#fff' : '#333',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
-                  whiteSpace: 'pre-wrap',
-                  lineHeight: 1.6,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                  lineHeight: 1.7,
+                  maxWidth: '100%',
+                  overflow: 'hidden',
                 }}
               >
-                {msg.content}
+                <MessageContent content={msg.content} isUser={msg.role === 'user'} />
               </div>
               {msg.role === 'user' && (
                 <div style={{
                   width: 32, height: 32, borderRadius: '50%',
                   background: '#f0f0f0',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
+                  flexShrink: 0, marginTop: 2,
                 }}>
                   <UserOutlined style={{ color: '#666', fontSize: 16 }} />
                 </div>
@@ -197,26 +281,29 @@ export function ChatPanel({
         {/* Streaming content */}
         {streaming && streamContent && (
           <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 16 }}>
-            <div style={{ maxWidth: '80%', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <div style={{ maxWidth: '85%', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
               <div style={{
                 width: 32, height: 32, borderRadius: '50%',
                 background: 'linear-gradient(135deg, #1677ff, #4096ff)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0,
+                flexShrink: 0, marginTop: 2,
               }}>
                 <RobotOutlined style={{ color: '#fff', fontSize: 16 }} />
               </div>
               <div style={{
                 padding: '10px 16px',
-                borderRadius: '16px 16px 16px 4px',
+                borderRadius: '12px 12px 12px 4px',
                 background: '#fff',
                 color: '#333',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
-                whiteSpace: 'pre-wrap',
-                lineHeight: 1.6,
+                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                lineHeight: 1.7,
+                maxWidth: '100%',
+                overflow: 'hidden',
               }}>
-                {streamContent}
-                <span style={{ animation: 'blink 1s infinite', marginLeft: 2 }}>▊</span>
+                <div className="chat-markdown">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamContent}</ReactMarkdown>
+                </div>
+                <span style={{ animation: 'blink 1s infinite', marginLeft: 2, color: '#1677ff' }}>▊</span>
               </div>
             </div>
           </div>
@@ -225,7 +312,7 @@ export function ChatPanel({
         {/* Loading indicator */}
         {loading && !streamContent && (
           <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 16 }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
               <div style={{
                 width: 32, height: 32, borderRadius: '50%',
                 background: 'linear-gradient(135deg, #1677ff, #4096ff)',
@@ -233,7 +320,12 @@ export function ChatPanel({
               }}>
                 <RobotOutlined style={{ color: '#fff', fontSize: 16 }} />
               </div>
-              <div style={{ padding: '10px 16px', borderRadius: '16px', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.08)' }}>
+              <div style={{
+                padding: '10px 16px',
+                borderRadius: '12px',
+                background: '#fff',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              }}>
                 <Spin size="small" /> <Text type="secondary">AI 思考中...</Text>
               </div>
             </div>
@@ -244,7 +336,14 @@ export function ChatPanel({
       </div>
 
       {/* Input */}
-      <div style={{ padding: 12, borderTop: '1px solid #f0f0f0', background: '#fff', display: 'flex', gap: 8 }}>
+      <div style={{
+        padding: '12px 16px',
+        borderTop: '1px solid #f0f0f0',
+        background: '#fff',
+        display: 'flex',
+        gap: 8,
+        flexShrink: 0,
+      }}>
         <TextArea
           value={inputValue}
           onChange={e => setInputValue(e.target.value)}

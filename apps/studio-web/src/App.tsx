@@ -159,9 +159,9 @@ export default function App() {
           </Space>
         </Header>
 
-        <Layout>
+        <Layout style={{ height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
           {/* Sidebar */}
-          <Sider width={280} style={{ background: '#fafafa', overflow: 'auto' }}>
+          <Sider width={280} style={{ background: '#fafafa', overflow: 'auto', height: '100%' }}>
             <Sidebar
               sessions={sessions}
               activeSessionId={activeSessionId}
@@ -178,14 +178,14 @@ export default function App() {
           </Sider>
 
           {/* Main content */}
-          <Content style={{ display: 'flex', flexDirection: 'column', background: '#fff' }}>
+          <Content style={{ display: 'flex', flexDirection: 'column', background: '#fff', height: '100%', overflow: 'hidden' }}>
             {activeNav === 'chat' && (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <Tabs
                   activeKey={activeChatTab}
                   onChange={k => setActiveChatTab(k as ChatTab)}
-                  style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
-                  tabBarStyle={{ margin: 0, padding: '0 16px', background: '#fff' }}
+                  style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+                  tabBarStyle={{ margin: 0, padding: '0 16px', background: '#fff', flexShrink: 0 }}
                   items={[
                     {
                       key: 'chat',
@@ -262,6 +262,7 @@ export default function App() {
                 background: '#fff',
                 borderLeft: '1px solid #f0f0f0',
                 overflow: 'auto',
+                height: '100%',
               }}
             >
               <DocumentPanel document={chat.document} />
