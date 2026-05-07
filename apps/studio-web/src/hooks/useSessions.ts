@@ -1,0 +1,88 @@
+/**
+ * useSessions — session management hook
+ */
+
+import { useState, useEffect, useCallback } from 'react';
+
+const API = '/api';
+
+export interface Session {
+  id: string;
+  name: string;
+  profileId: string;
+  messageCount: number;
+  completeness: number;
+  featureName: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export function useSessions() {
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/sessions`);
+      const data = await res.json();
+      setSessions(data);
+      // Auto-select first session if none selected
+      if (!activeSessionId && data.length > 0) {
+        setActiveSessionId(data[0].id);
+      }
+    } catch {
+      console.error('Failed to load sessions');
+    }
+  }, [activeSessionId]);
+
+  useEffect(() => { refresh(); }, []);
+
+  const createSession = useCallback(async (profileId = 'vue3-admin', name?: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileId, name }),
+      });
+      const data = await res.json();
+      await refresh();
+      setActiveSessionId(data.id);
+      return data.id;
+    } finally {
+      setLoading(false);
+    }
+  }, [refresh]);
+
+  const deleteSession = useCallback(async (id: string) => {
+    await fetch(`${API}/sessions/${id}`, { method: 'DELETE' });
+    if (activeSessionId === id) {
+      setActiveSessionId(null);
+    }
+    await refresh();
+  }, [activeSessionId, refresh]);
+
+  const renameSession = useCallback(async (id: string, name: string) => {
+    await fetch(`${API}/sessions/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    await refresh();
+  }, [refresh]);
+
+  const activeSession = sessions.find(s => s.id === activeSessionId) ?? null;
+
+  return {
+    sessions,
+    activeSession,
+    activeSessionId,
+    setActiveSessionId,
+    createSession,
+    deleteSession,
+    renameSession,
+    loading,
+    refresh,
+  };
+}
