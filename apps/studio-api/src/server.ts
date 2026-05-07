@@ -705,13 +705,30 @@ app.post('/api/workflows/:id/run', async (req, res) => {
         targetProfile: { id: profileId },
         schemas,
         policies,
+        // Approval callback — set run to waiting-approval status
+        onApprovalRequired: async (node, state) => {
+          runStore.update(runId, { status: 'waiting-approval' });
+          runStore.updateStage(runId, node.id, { status: 'waiting-approval' });
+          // In a real system, this would wait for user approval
+          // For now, auto-approve (return true)
+          return true;
+        },
+        // Node event callbacks
+        onNodeStart: (node) => {
+          runStore.update(runId, { status: 'running' });
+        },
+        onNodeComplete: (node, result) => {
+          if (result.ok) {
+            runStore.updateStage(runId, node.id, { status: 'completed', completedAt: Date.now() });
+          }
+        },
       };
 
       const executionResult = await executor.execute(definition, input, options);
 
       // Save results
       runStore.update(runId, {
-        status: executionResult.status === 'completed' ? 'completed' : 'failed',
+        status: executionResult.status === 'completed' ? 'completed' : executionResult.status === 'waiting-approval' ? 'waiting-approval' : 'failed',
         result: executionResult.nodeResults as unknown as JsonObject,
       });
 

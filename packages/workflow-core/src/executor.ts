@@ -18,7 +18,17 @@ export interface WorkflowExecutionOptions {
   schemas?: WorkflowRunState['context']['schemas'];
   policies?: WorkflowRunState['context']['policies'];
   resolvedTargetProfile?: WorkflowRunState['context']['resolvedTargetProfile'];
+  /** 审批回调 — 返回 true 继续，false 中止 */
+  onApprovalRequired?: (node: WorkflowNodeDef, state: WorkflowRunState) => Promise<boolean>;
+  /** 节点事件回调 */
+  onNodeStart?: (node: WorkflowNodeDef, state: WorkflowRunState) => void;
+  onNodeComplete?: (node: WorkflowNodeDef, result: WorkflowNodeResult, state: WorkflowRunState) => void;
+  /** 最大总轮次 (防止无限循环) */
+  maxTotalRounds?: number;
 }
+
+const DEFAULT_MAX_RETRIES = 3;
+const DEFAULT_MAX_TOTAL_ROUNDS = 20;
 
 export class WorkflowExecutor {
   constructor(private readonly adapters: WorkflowExecutorAdapters) {}
@@ -32,7 +42,13 @@ export class WorkflowExecutor {
       throw new Error(`Workflow ${definition.id} has no executable nodes`);
     }
 
-    // 先构造最小运行态，后续可以继续补充事件流、日志流和审批状态。
+    const maxTotalRounds = options.maxTotalRounds ?? DEFAULT_MAX_TOTAL_ROUNDS;
+    const retryCounts = new Map<string, number>();
+    const nodeMap = new Map<string, WorkflowNodeDef>();
+    for (const node of definition.nodes) {
+      nodeMap.set(node.id, node);
+    }
+
     const state: WorkflowRunState = {
       context: {
         runId: `${definition.id}-${Date.now()}`,
@@ -48,32 +64,93 @@ export class WorkflowExecutor {
       status: 'running',
     };
 
-    // 当前骨架先按声明顺序串行执行，后续再补依赖图调度和并行执行。
-    for (const node of definition.nodes) {
+    let totalRounds = 0;
+    let currentInput = input;
+    let nodeIndex = 0;
+
+    while (nodeIndex < definition.nodes!.length && totalRounds < maxTotalRounds) {
+      const node = definition.nodes![nodeIndex];
+      totalRounds++;
+
+      // Check dependencies
       if (!this.dependenciesSatisfied(node, state)) {
         state.nodeResults[node.id] = {
           ok: true,
           skipped: true,
           reason: '依赖节点尚未成功完成',
         };
+        nodeIndex++;
         continue;
       }
 
+      // Check when clause
       if (!this.matchesWhenClause(node, state)) {
         state.nodeResults[node.id] = {
           ok: true,
           skipped: true,
           reason: 'when 条件未命中',
         };
+        nodeIndex++;
         continue;
       }
 
-      const result = await this.runNode(node, input, state);
+      // Notify node start
+      options.onNodeStart?.(node, state);
+
+      // Run the node
+      const result = await this.runNode(node, currentInput, state);
       state.nodeResults[node.id] = result;
-      if (!result.ok) {
+
+      // Notify node complete
+      options.onNodeComplete?.(node, result, state);
+
+      if (result.ok) {
+        // Check if this node requires approval
+        if (node.requiresApproval && options.onApprovalRequired) {
+          const approved = await options.onApprovalRequired(node, state);
+          if (!approved) {
+            state.status = 'waiting-approval';
+            return state;
+          }
+        }
+
+        // Use output as input for next nodes
+        if (result.output) {
+          currentInput = { ...currentInput, ...result.output };
+        }
+        nodeIndex++;
+      } else {
+        // Node failed — check for retry loop
+        if (node.retryTarget && nodeMap.has(node.retryTarget)) {
+          const retries = retryCounts.get(node.id) ?? 0;
+          const maxRetries = node.maxRetries ?? DEFAULT_MAX_RETRIES;
+
+          if (retries < maxRetries) {
+            retryCounts.set(node.id, retries + 1);
+            // Clear the failed result so it can be retried
+            delete state.nodeResults[node.id];
+            // Jump back to the retry target
+            const targetIndex = definition.nodes!.findIndex(n => n.id === node.retryTarget);
+            if (targetIndex >= 0) {
+              nodeIndex = targetIndex;
+              continue;
+            }
+          }
+        }
+
+        // No retry or max retries exceeded
         state.status = 'failed';
         return state;
       }
+    }
+
+    if (totalRounds >= maxTotalRounds) {
+      state.status = 'failed';
+      state.nodeResults['_error'] = {
+        ok: false,
+        error: `超过最大执行轮次 (${maxTotalRounds})，可能存在无限循环`,
+      };
+      return state;
     }
 
     if (definition.output?.primaryFrom) {

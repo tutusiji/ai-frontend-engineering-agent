@@ -29,6 +29,14 @@ export interface WorkflowNodeDef {
   dependsOn?: string[];
   outputSchema?: string;
   when?: WorkflowWhenClause;
+  /** 节点名称 (用于 UI 展示) */
+  name?: string;
+  /** 当此节点失败时，回退到的目标节点 ID (修复回流) */
+  retryTarget?: string;
+  /** 最大重试次数 (默认 3) */
+  maxRetries?: number;
+  /** 审批闸门 — 节点完成后需要人工审批 */
+  requiresApproval?: boolean;
 }
 
 export interface WorkflowOutputDef {

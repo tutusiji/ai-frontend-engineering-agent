@@ -1,6 +1,6 @@
 id: from-idea-to-app
 name: From Idea To Application
-version: 0.1.0
+version: 0.2.0
 description: 新项目专用工作流 — 从想法到完整应用，支持交互式需求对话
 
 input:
@@ -23,11 +23,13 @@ input:
 nodes:
   - id: interactive_requirement
     type: agent
+    name: 交互式需求收集
     skill: interactive-requirement
     outputSchema: requirement-spec
 
   - id: target_profile_selection
     type: agent
+    name: 目标 Profile 选择
     skill: target-profile-selection
     dependsOn:
       - interactive_requirement
@@ -35,6 +37,7 @@ nodes:
 
   - id: design_generation
     type: agent
+    name: 设计稿生成
     skill: design-generation
     dependsOn:
       - target_profile_selection
@@ -44,12 +47,16 @@ nodes:
 
   - id: code_generation
     type: agent
+    name: 代码生成
     skill: code-generation
     dependsOn:
       - design_generation
     when:
       allPassed: true
     outputSchema: generation-report
+    # 代码生成失败时可以回退到设计稿重新生成
+    retryTarget: design_generation
+    maxRetries: 2
 
 output:
   primaryFrom: code_generation

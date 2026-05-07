@@ -1,6 +1,6 @@
 id: regression-fix-loop
 name: Regression Fix Loop
-version: 0.2.0
+version: 0.3.0
 
 input:
   schema: validation-report
@@ -8,11 +8,13 @@ input:
 nodes:
   - id: classify_failures
     type: agent
+    name: 分类失败项
     skill: code-review-rubric
     outputSchema: fix-task-list
 
   - id: targeted_fix
     type: agent
+    name: 定向修复
     skill: frontend-coding-core
     dependsOn:
       - classify_failures
@@ -20,12 +22,16 @@ nodes:
 
   - id: rerun_validation
     type: pluginGroup
+    name: 重新验证
     plugins:
       - playwright-runner
       - visual-regression-runner
     dependsOn:
       - targeted_fix
     outputSchema: validation-report
+    # 当验证失败时，回退到 targeted_fix 重新修复
+    retryTarget: targeted_fix
+    maxRetries: 3
 
 retryPolicy:
   maxRounds: 3

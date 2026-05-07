@@ -1,6 +1,6 @@
 id: from-chat-to-page
 name: From Chat To Frontend Page
-version: 0.2.0
+version: 0.3.0
 
 input:
   schema: requirement-chat-input
@@ -18,11 +18,13 @@ input:
 nodes:
   - id: requirement_analysis
     type: agent
+    name: 需求分析
     skill: requirement-analysis
     outputSchema: requirement-spec
 
   - id: target_profile_selection
     type: agent
+    name: 目标 Profile 选择
     skill: target-profile-selection
     dependsOn:
       - requirement_analysis
@@ -30,6 +32,7 @@ nodes:
 
   - id: page_planning
     type: agent
+    name: 页面规划
     skill: page-planning
     dependsOn:
       - target_profile_selection
@@ -37,6 +40,7 @@ nodes:
 
   - id: navigation_decision
     type: plugin
+    name: 导航决策
     plugin: navigation-decider
     dependsOn:
       - page_planning
@@ -44,6 +48,7 @@ nodes:
 
   - id: implementation_plan
     type: agent
+    name: 实现计划
     skill: frontend-coding-core
     dependsOn:
       - navigation_decision
@@ -51,6 +56,7 @@ nodes:
 
   - id: code_generation
     type: plugin
+    name: 代码生成
     plugin: page-generator
     dependsOn:
       - implementation_plan
@@ -58,6 +64,7 @@ nodes:
 
   - id: rule_check
     type: pluginGroup
+    name: 规则检查
     plugins:
       - loading-rule-checker
       - debounce-rule-checker
@@ -69,6 +76,7 @@ nodes:
 
   - id: e2e_validation
     type: plugin
+    name: E2E 验证
     plugin: playwright-runner
     dependsOn:
       - rule_check
@@ -78,13 +86,19 @@ nodes:
 
   - id: visual_validation
     type: plugin
+    name: 视觉回归验证
     plugin: visual-regression-runner
     dependsOn:
       - e2e_validation
     outputSchema: validation-report
+    # 当视觉验证失败时，回退到代码生成重新修复
+    retryTarget: code_generation
+    maxRetries: 3
+    requiresApproval: false
 
   - id: fix_loop
     type: agent
+    name: 修复回流
     skill: frontend-coding-core
     dependsOn:
       - visual_validation
