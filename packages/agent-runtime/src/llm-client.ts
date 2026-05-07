@@ -1,0 +1,128 @@
+/**
+ * OpenAI-compatible LLM HTTP client.
+ *
+ * Works with any provider that exposes the /v1/chat/completions endpoint:
+ * Xiaomi MiMo, OpenRouter, DeepSeek, local vLLM, etc.
+ */
+
+export interface LlmConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
+}
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatCompletion {
+  id: string;
+  choices: Array<{
+    index: number;
+    message: { role: string; content: string };
+    finish_reason: string;
+  }>;
+  model?: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
+export interface LlmCallResult {
+  content: string;
+  usage?: ChatCompletion['usage'];
+  model: string;
+}
+
+/**
+ * Send a chat completion request to an OpenAI-compatible endpoint.
+ */
+export async function chatCompletion(
+  config: LlmConfig,
+  messages: ChatMessage[],
+): Promise<LlmCallResult> {
+  const url = `${config.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+
+  const body = {
+    model: config.model,
+    messages,
+    temperature: config.temperature ?? 0.2,
+    max_tokens: config.maxTokens ?? 4096,
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(
+      `LLM request failed (${response.status}): ${errorText || response.statusText}`,
+    );
+  }
+
+  const data = (await response.json()) as ChatCompletion;
+
+  const choice = data.choices?.[0];
+  if (!choice?.message?.content) {
+    throw new Error('LLM returned empty response');
+  }
+
+  return {
+    content: choice.message.content,
+    usage: data.usage,
+    model: data.model ?? config.model,
+  };
+}
+
+/**
+ * Build LlmConfig from environment variables.
+ *
+ * Priority:
+ *   LLM_BASE_URL + LLM_API_KEY + LLM_MODEL  (generic override)
+ *   XIAOMI_BASE_URL + XIAOMI_API_KEY         (Xiaomi MiMo)
+ *   OPENROUTER_API_KEY                        (OpenRouter)
+ */
+export function loadLlmConfigFromEnv(): LlmConfig {
+  // Generic override — highest priority
+  if (process.env.LLM_BASE_URL && process.env.LLM_API_KEY) {
+    return {
+      baseUrl: process.env.LLM_BASE_URL,
+      apiKey: process.env.LLM_API_KEY,
+      model: process.env.LLM_MODEL ?? 'gpt-4o-mini',
+    };
+  }
+
+  // Xiaomi MiMo
+  if (process.env.XIAOMI_API_KEY) {
+    return {
+      baseUrl: process.env.XIAOMI_BASE_URL ?? 'https://api.xiaomimimo.com/v1',
+      apiKey: process.env.XIAOMI_API_KEY,
+      model: process.env.XIAOMI_MODEL ?? 'mimo-v2.5-pro',
+    };
+  }
+
+  // OpenRouter
+  if (process.env.OPENROUTER_API_KEY) {
+    return {
+      baseUrl: 'https://openrouter.ai/api/v1',
+      apiKey: process.env.OPENROUTER_API_KEY,
+      model: process.env.OPENROUTER_MODEL ?? 'anthropic/claude-sonnet-4',
+    };
+  }
+
+  throw new Error(
+    'No LLM credentials found. Set LLM_BASE_URL + LLM_API_KEY, ' +
+    'or XIAOMI_API_KEY, or OPENROUTER_API_KEY in your environment.',
+  );
+}

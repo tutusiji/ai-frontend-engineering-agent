@@ -67,6 +67,7 @@ export interface WorkflowNodeResult {
   // skipped 表示节点因条件不满足而被跳过，不算执行失败。
   skipped?: boolean;
   reason?: string;
+  error?: string;
   output?: JsonObject;
   raw?: JsonValue;
 }

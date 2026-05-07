@@ -18,6 +18,11 @@
 - [x] 先把 loading、debounce、删除确认 3 类规则检查器从 mock 适配到真实仓库扫描结果
 - [x] 接入诊断型 `playwright-runner`，可识别支持性、配置完整度与测试线索
 - [x] 接入诊断型 `visual-regression-runner`，可识别视觉基线、截图目录与视觉测试线索
+- [x] 接入 Agent Runtime (LLM 客户端 + Agent Runner + 4 个 Skill 定义)
+- [x] 创建 `llm-runner.ts` 真实 LLM 驱动执行入口
+- [x] 实现 interactive-requirement Skill (多轮对话式需求收集)
+- [x] 实现 design-generation Skill (HTML 设计稿生成)
+- [x] 实现 code-generation Skill (从需求文档生成代码)
 - 后续把诊断型 `playwright-runner` / `visual-regression-runner` 升级为真实执行器，并产出日志、截图、diff 图与 HTML artifacts
 
 ## Phase 3：补可视化和审查能力

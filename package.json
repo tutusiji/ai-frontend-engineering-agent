@@ -6,7 +6,12 @@
   "packageManager": "pnpm@10.16.0",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "workflow:mock": "tsx packages/workflow-core/src/mock-runner.ts"
+    "workflow:mock": "tsx packages/workflow-core/src/mock-runner.ts",
+    "workflow:llm": "tsx packages/workflow-core/src/llm-runner.ts",
+    "requirement": "tsx packages/workflow-core/src/interactive-runner.ts",
+    "studio:api": "tsx apps/studio-api/src/server.ts",
+    "studio:web": "cd apps/studio-web && pnpm dev",
+    "studio": "pnpm studio:api & pnpm studio:web"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

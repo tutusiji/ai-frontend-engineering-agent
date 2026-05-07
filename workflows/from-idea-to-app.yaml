@@ -1,0 +1,55 @@
+id: from-idea-to-app
+name: From Idea To Application
+version: 0.1.0
+description: 新项目专用工作流 — 从想法到完整应用，支持交互式需求对话
+
+input:
+  schema: idea-input
+  fields:
+    - name: userMessage
+      type: string
+      required: true
+    - name: conversationHistory
+      type: array
+      required: false
+    - name: existingDocument
+      type: object
+      required: false
+    - name: mode
+      type: string
+      required: false
+      enum: [gather, refine, score, design, code]
+
+nodes:
+  - id: interactive_requirement
+    type: agent
+    skill: interactive-requirement
+    outputSchema: requirement-spec
+
+  - id: target_profile_selection
+    type: agent
+    skill: target-profile-selection
+    dependsOn:
+      - interactive_requirement
+    outputSchema: target-profile-selection
+
+  - id: design_generation
+    type: agent
+    skill: design-generation
+    dependsOn:
+      - target_profile_selection
+    when:
+      allPassed: true
+    outputSchema: generation-report
+
+  - id: code_generation
+    type: agent
+    skill: code-generation
+    dependsOn:
+      - design_generation
+    when:
+      allPassed: true
+    outputSchema: generation-report
+
+output:
+  primaryFrom: code_generation
