@@ -337,7 +337,7 @@ app.post('/api/chat/stream', async (req, res) => {
       model: llmConfig.model,
       messages,
       temperature: llmConfig.temperature ?? 0.2,
-      max_tokens: llmConfig.maxTokens ?? 4096,
+      max_tokens: llmConfig.maxTokens ?? 131072,
       stream: true,
     };
 
@@ -358,6 +358,7 @@ app.post('/api/chat/stream', async (req, res) => {
     }
 
     let fullContent = '';
+    let finishReason = '';
     const reader = llmRes.body?.getReader();
     if (!reader) {
       send('error', { error: 'No response body' });
@@ -389,31 +390,80 @@ app.post('/api/chat/stream', async (req, res) => {
             fullContent += delta;
             send('chunk', { content: delta });
           }
+          // Track finish reason
+          const fr = chunk.choices?.[0]?.finish_reason;
+          if (fr) finishReason = fr;
         } catch {
           // ignore parse errors in stream
         }
       }
     }
 
+    // Warn if response was truncated
+    if (finishReason === 'length') {
+      console.log(`⚠️ [${sessionId}] Truncated: finish_reason=length, content_len=${fullContent.length}`);
+      send('warning', { message: '⚠️ AI 响应被截断（token 限制），已尝试自动修复 JSON' });
+    } else {
+      console.log(`✅ [${sessionId}] Stream done: finish_reason=${finishReason}, content_len=${fullContent.length}`);
+    }
+
     // Process the complete response
     send('done', { fullContent });
 
-    const { extractJson } = await import('@ai-frontend-engineering-agent/agent-runtime');
-    const parsed = extractJson(fullContent);
+    // Strip JSON from the response — only keep dialogue text
+    const stripJson = (text: string): string => {
+      let s = text;
+      // Remove ```json ... ``` blocks (including unclosed)
+      s = s.replace(/```(?:json)?\s*\n?[\s\S]*?(?:```|$)/g, '').trim();
+      // Remove raw JSON with requirement fields
+      s = s.replace(/\n?\{[\s\S]*?"(?:featureName|completeness|userRoles|businessGoal)"[\s\S]*/g, '').trim();
+      // Remove trailing incomplete JSON
+      s = s.replace(/\n?\{[\s\S]*$/g, '').trim();
+      // Clean up
+      s = s.replace(/^-{3,}\s*$/gm, '').trim();
+      s = s.replace(/\n{3,}/g, '\n\n').trim();
+      return s;
+    };
 
-    if (parsed) {
-      let output = parsed;
-      if (skill.normalize) {
-        output = await skill.normalize(parsed);
+    const textContent = stripJson(fullContent);
+    const messageToStore = textContent.length >= 15 ? textContent : '（需求信息已更新至右侧面板）';
+    console.log(`📝 [${sessionId}] Storing message: original=${fullContent.length} chars, stripped=${textContent.length} chars, json=${fullContent !== textContent}`);
+
+    // Store assistant message (text only, no JSON)
+    sessionStore.addMessage(sessionId, { role: 'assistant', content: messageToStore, timestamp: Date.now() });
+
+    // Extract structured info from the conversation (separate lightweight LLM call)
+    try {
+      const { extractRequirementInfo, mergeDocument } = await import('@ai-frontend-engineering-agent/agent-runtime');
+      
+      const currentDoc = session.document ?? {};
+      const allMessages = sessionStore.get(sessionId)?.messages ?? [];
+      
+      // Build a compact conversation summary for extraction (use stripped text)
+      const recentMsgs = allMessages.slice(-6);
+      const conversationSummary = recentMsgs
+        .map(m => {
+          const c = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+          return `[${m.role}]: ${c.slice(0, 300)}`;
+        })
+        .join('\n');
+      
+      const extracted = await extractRequirementInfo(
+        llmConfig,
+        conversationSummary,
+        currentDoc,
+      );
+      
+      if (extracted) {
+        const merged = mergeDocument(currentDoc, extracted);
+        const completeness = (merged.completeness as number) ?? 0;
+        sessionStore.updateDocument(sessionId, merged, completeness);
+        console.log(`✅ [${sessionId}] Document updated: completeness=${completeness}%`);
+        send('document', { document: merged });
       }
-      const doc = output as Record<string, unknown>;
-      const completeness = (doc.completeness as number) ?? 0;
-      sessionStore.updateDocument(sessionId, doc, completeness);
-      sessionStore.addMessage(sessionId, { role: 'assistant', content: JSON.stringify(output), timestamp: Date.now() });
-      send('document', { document: output });
-    } else {
-      sessionStore.addMessage(sessionId, { role: 'assistant', content: fullContent, timestamp: Date.now() });
-      send('document', { document: null, raw: fullContent });
+    } catch (extractErr) {
+      console.error(`⚠️ [${sessionId}] Extraction failed:`, extractErr);
+      // Don't fail the whole request if extraction fails
     }
 
     session = sessionStore.get(sessionId)!;

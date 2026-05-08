@@ -1,5 +1,5 @@
 /**
- * App.tsx — Main Studio layout
+ * App.tsx — Main Studio layout (HeroUI + Tailwind)
  *
  * Layout:
  *   ┌──────────────────────────────────────────────────┐
@@ -15,13 +15,9 @@
  */
 
 import { useState, useEffect } from 'react';
-import { ConfigProvider, Layout, Typography, Space, Tag, message, Tabs, Badge } from 'antd';
-import {
-  ThunderboltOutlined,
-  PictureOutlined,
-  CodeOutlined,
-  FileTextOutlined,
-} from '@ant-design/icons';
+import { Tabs, TabList, Tab, TabPanel } from '@heroui/react/tabs';
+import { Badge } from '@heroui/react/badge';
+import { Zap, Image, Code, FileText } from 'lucide-react';
 import { useSessions } from './hooks/useSessions';
 import { useChat } from './hooks/useChat';
 import { Sidebar } from './components/Sidebar';
@@ -30,9 +26,6 @@ import { DesignPanel } from './components/DesignPanel';
 import { CodePanel } from './components/CodePanel';
 import { WorkflowPanel } from './components/WorkflowPanel';
 import { RunHistory } from './components/RunHistory';
-
-const { Header, Content, Sider } = Layout;
-const { Title, Text } = Typography;
 
 const API = '/api';
 
@@ -71,7 +64,7 @@ export default function App() {
   const handleCreateSession = async () => {
     const id = await createSession(profileId);
     if (id) {
-      message.success('会话已创建');
+      console.log('会话已创建');
     }
   };
 
@@ -88,12 +81,12 @@ export default function App() {
       if (data.ok && data.htmlContent) {
         setDesignHtml(data.htmlContent);
         setActiveChatTab('design');
-        message.success('设计稿生成成功');
+        console.log('设计稿生成成功');
       } else {
-        message.error(data.error || '生成失败');
+        console.error(data.error || '生成失败');
       }
     } catch {
-      message.error('请求失败');
+      console.error('请求失败');
     } finally {
       setDesignLoading(false);
     }
@@ -112,12 +105,12 @@ export default function App() {
       if (data.ok && data.files) {
         setGeneratedFiles(data.files);
         setActiveChatTab('code');
-        message.success(`代码生成成功，共 ${data.files.length} 个文件`);
+        console.log(`代码生成成功，共 ${data.files.length} 个文件`);
       } else {
-        message.error(data.error || '生成失败');
+        console.error(data.error || '生成失败');
       }
     } catch {
-      message.error('请求失败');
+      console.error('请求失败');
     } finally {
       setCodeLoading(false);
     }
@@ -126,150 +119,148 @@ export default function App() {
   const completeness = chat.document?.completeness ?? 0;
 
   return (
-    <ConfigProvider
-      theme={{
-        token: { colorPrimary: '#1677ff', borderRadius: 8 },
-      }}
-    >
-      <Layout style={{ minHeight: '100vh' }}>
-        {/* Header */}
-        <Header style={{
-          display: 'flex',
-          alignItems: 'center',
-          padding: '0 24px',
-          background: 'linear-gradient(135deg, #001529, #002140)',
-          borderBottom: '1px solid #003a70',
-        }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 8,
-            background: 'linear-gradient(135deg, #1677ff, #4096ff)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            marginRight: 12,
-          }}>
-            <ThunderboltOutlined style={{ color: '#fff', fontSize: 20 }} />
-          </div>
-          <Title level={4} style={{ color: '#fff', margin: 0, flex: 1 }}>
-            AI Frontend Engineering Agent
-          </Title>
-          <Space>
-            <Tag color="blue">{profileId}</Tag>
-            {activeSession && (
-              <Tag color="green">{activeSession.name}</Tag>
-            )}
-          </Space>
-        </Header>
-
-        <Layout style={{ height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
-          {/* Sidebar */}
-          <Sider width={280} style={{ background: '#fafafa', overflow: 'auto', height: '100%' }}>
-            <Sidebar
-              sessions={sessions}
-              activeSessionId={activeSessionId}
-              activeNav={activeNav}
-              onSelectSession={(id) => {
-                setActiveSessionId(id);
-                setActiveNav('chat');
-              }}
-              onCreateSession={handleCreateSession}
-              onDeleteSession={deleteSession}
-              onRenameSession={renameSession}
-              onNavigate={setActiveNav}
-            />
-          </Sider>
-
-          {/* Main content */}
-          <Content style={{ display: 'flex', flexDirection: 'column', background: '#fff', height: '100%', overflow: 'hidden' }}>
-            {activeNav === 'chat' && (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <Tabs
-                  activeKey={activeChatTab}
-                  onChange={k => setActiveChatTab(k as ChatTab)}
-                  style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
-                  tabBarStyle={{ margin: 0, padding: '0 16px', background: '#fff', flexShrink: 0 }}
-                  items={[
-                    {
-                      key: 'chat',
-                      label: <span><ThunderboltOutlined /> 需求对话</span>,
-                      children: (
-                        <ChatPanel
-                          messages={chat.messages}
-                          document={chat.document}
-                          loading={chat.loading}
-                          streaming={chat.streaming}
-                          streamContent={chat.streamContent}
-                          completeness={completeness}
-                          profileId={profileId}
-                          onProfileChange={setProfileId}
-                          onSend={chat.send}
-                          onStop={chat.stop}
-                          onGenerateDesign={handleGenerateDesign}
-                          onGenerateCode={handleGenerateCode}
-                          designLoading={designLoading}
-                          codeLoading={codeLoading}
-                        />
-                      ),
-                    },
-                    {
-                      key: 'design',
-                      label: (
-                        <Badge dot={!!designHtml}>
-                          <span><PictureOutlined /> 设计稿</span>
-                        </Badge>
-                      ),
-                      children: <DesignPanel html={designHtml} />,
-                    },
-                    {
-                      key: 'code',
-                      label: (
-                        <Badge count={generatedFiles.length} size="small">
-                          <span><CodeOutlined /> 代码</span>
-                        </Badge>
-                      ),
-                      children: <CodePanel files={generatedFiles} />,
-                    },
-                    {
-                      key: 'document',
-                      label: (
-                        <Badge dot={!!chat.document}>
-                          <span><FileTextOutlined /> 文档</span>
-                        </Badge>
-                      ),
-                      children: (
-                        <div style={{ overflow: 'auto', height: 'calc(100vh - 150px)' }}>
-                          <DocumentPanel document={chat.document} />
-                        </div>
-                      ),
-                    },
-                  ]}
-                />
-              </div>
-            )}
-
-            {activeNav === 'workflows' && (
-              <WorkflowPanel profileId={profileId} />
-            )}
-
-            {activeNav === 'history' && (
-              <RunHistory />
-            )}
-          </Content>
-
-          {/* Right sidebar — Document panel (only in chat mode) */}
-          {activeNav === 'chat' && (
-            <Sider
-              width={360}
-              style={{
-                background: '#fff',
-                borderLeft: '1px solid #f0f0f0',
-                overflow: 'auto',
-                height: '100%',
-              }}
-            >
-              <DocumentPanel document={chat.document} />
-            </Sider>
+    <div className="flex flex-col h-screen overflow-hidden">
+      {/* Header */}
+      <header className="flex items-center px-6 h-16 shrink-0"
+        style={{ background: 'linear-gradient(135deg, #001529, #002140)', borderBottom: '1px solid #003a70' }}>
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center mr-3"
+          style={{ background: 'linear-gradient(135deg, #1677ff, #4096ff)' }}>
+          <Zap className="w-5 h-5 text-white" />
+        </div>
+        <h4 className="text-white m-0 flex-1 text-lg font-semibold">
+          AI Frontend Engineering Agent
+        </h4>
+        <div className="flex gap-2 items-center">
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/15 text-white/90 backdrop-blur-sm">
+            {profileId}
+          </span>
+          {activeSession && (
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-300 backdrop-blur-sm">
+              {activeSession.name}
+            </span>
           )}
-        </Layout>
-      </Layout>
-    </ConfigProvider>
+        </div>
+      </header>
+
+      {/* Body */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <aside className="w-[280px] shrink-0 bg-gray-50 overflow-auto h-full border-r border-divider">
+          <Sidebar
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            activeNav={activeNav}
+            onSelectSession={(id) => {
+              setActiveSessionId(id);
+              setActiveNav('chat');
+            }}
+            onCreateSession={handleCreateSession}
+            onDeleteSession={deleteSession}
+            onRenameSession={renameSession}
+            onNavigate={setActiveNav}
+          />
+        </aside>
+
+        {/* Main content */}
+        <main className="flex-1 flex flex-col bg-white h-full overflow-hidden">
+          {activeNav === 'chat' && (
+            <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+              <Tabs
+                selectedKey={activeChatTab}
+                onSelectionChange={(key) => setActiveChatTab(key as ChatTab)}
+                variant="primary"
+                className="flex-1 flex flex-col overflow-hidden min-h-0"
+              >
+                <TabList className="px-4 bg-white border-b border-divider">
+                  <Tab id="chat">
+                    <div className="flex items-center gap-1.5">
+                      <Zap className="w-4 h-4" />
+                      <span>需求对话</span>
+                    </div>
+                  </Tab>
+                  <Tab id="design">
+                    {designHtml ? (
+                      <Badge content="!" color="default" size="sm">
+                        <div className="flex items-center gap-1.5">
+                          <Image className="w-4 h-4" />
+                          <span>设计稿</span>
+                        </div>
+                      </Badge>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <Image className="w-4 h-4" />
+                        <span>设计稿</span>
+                      </div>
+                    )}
+                  </Tab>
+                  <Tab id="code">
+                    {generatedFiles.length > 0 ? (
+                      <Badge content={String(generatedFiles.length)} color="success" size="sm">
+                        <div className="flex items-center gap-1.5">
+                          <Code className="w-4 h-4" />
+                          <span>代码</span>
+                        </div>
+                      </Badge>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <Code className="w-4 h-4" />
+                        <span>代码</span>
+                      </div>
+                    )}
+                  </Tab>
+
+                </TabList>
+
+                <TabPanel id="chat" className="!p-0 !mt-0 flex-1 flex flex-col overflow-hidden min-h-0">
+                  <ChatPanel
+                    messages={chat.messages}
+                    document={chat.document}
+                    loading={chat.loading}
+                    streaming={chat.streaming}
+                    streamContent={chat.streamContent}
+                    completeness={completeness}
+                    profileId={profileId}
+                    onProfileChange={setProfileId}
+                    onSend={chat.send}
+                    onStop={chat.stop}
+                    onGenerateDesign={handleGenerateDesign}
+                    onGenerateCode={handleGenerateCode}
+                    designLoading={designLoading}
+                    codeLoading={codeLoading}
+                  />
+                </TabPanel>
+                <TabPanel id="design">
+                  <DesignPanel html={designHtml} />
+                </TabPanel>
+                <TabPanel id="code">
+                  <CodePanel files={generatedFiles} />
+                </TabPanel>
+
+              </Tabs>
+            </div>
+          )}
+
+          {activeNav === 'workflows' && (
+            <WorkflowPanel profileId={profileId} />
+          )}
+
+          {activeNav === 'history' && (
+            <RunHistory />
+          )}
+        </main>
+
+        {/* Right sidebar — Document panel (only in chat mode) */}
+        {activeNav === 'chat' && (
+          <aside className="w-[360px] shrink-0 bg-white border-l border-divider overflow-auto h-full">
+            <DocumentPanel
+              document={chat.document}
+              onSend={chat.send}
+              onRegenerate={() => chat.send('请根据当前对话内容，重新输出完整的需求文档 JSON')}
+              loading={chat.loading}
+            />
+          </aside>
+        )}
+      </div>
+    </div>
   );
 }

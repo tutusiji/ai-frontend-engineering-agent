@@ -14,11 +14,11 @@ export interface ChatMessage {
 }
 
 export interface RequirementDocument {
-  featureName: string;
-  businessGoal: string;
-  userRoles: Array<{ name: string; description: string; permissions: string[] }>;
-  uiLibrary: { id: string; name: string; npmPackage: string } | null;
-  pages: Array<{
+  featureName?: string;
+  businessGoal?: string;
+  userRoles?: Array<{ name: string; description: string; permissions: string[] }>;
+  uiLibrary?: { id: string; name: string; npmPackage: string } | null;
+  pages?: Array<{
     name: string;
     goal: string;
     pageType: string;
@@ -27,14 +27,14 @@ export interface RequirementDocument {
     fields: Array<{ name: string; type: string; required: boolean; description: string }>;
     interactions: string[];
   }>;
-  entities: Array<{ name: string; fields: Array<{ name: string; type: string; required: boolean }> }>;
-  businessRules: string[];
-  edgeCases: string[];
-  nonFunctional: string[];
-  phases: Array<{ id: string; name: string; pages: string[]; priority: string }>;
-  completeness: number;
-  openQuestions: string[];
-  suggestedNextStep: string;
+  entities?: Array<{ name: string; fields: Array<{ name: string; type: string; required: boolean }> }>;
+  businessRules?: string[];
+  edgeCases?: string[];
+  nonFunctional?: string[];
+  phases?: Array<{ id: string; name: string; pages: string[]; priority: string }>;
+  completeness?: number;
+  openQuestions?: string[];
+  suggestedNextStep?: string;
 }
 
 export function useChat(sessionId: string | null, profileId: string) {
@@ -114,6 +114,14 @@ export function useChat(sessionId: string | null, profileId: string) {
             }
             if (data.document) {
               setDocument(data.document);
+            }
+            if (data.message && !data.content) {
+              // Warning or info message from backend (e.g. truncation warning)
+              setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: data.message,
+                timestamp: Date.now(),
+              }]);
             }
           }
         }
@@ -205,16 +213,18 @@ export function useChat(sessionId: string | null, profileId: string) {
 }
 
 function formatAiResponse(doc: RequirementDocument): string {
+  const pages = doc.pages ?? [];
+  const openQuestions = doc.openQuestions ?? [];
   const parts: string[] = [];
 
   if (doc.featureName) parts.push(`功能: ${doc.featureName}`);
   if (doc.uiLibrary) parts.push(`UI 库: ${doc.uiLibrary.name}`);
-  if (doc.pages.length > 0) parts.push(`页面: ${doc.pages.map(p => p.name).join(', ')}`);
-  parts.push(`完整度: ${doc.completeness}%`);
+  if (pages.length > 0) parts.push(`页面: ${pages.map(p => p.name).join(', ')}`);
+  parts.push(`完整度: ${doc.completeness ?? 0}%`);
 
-  if (doc.openQuestions.length > 0) {
+  if (openQuestions.length > 0) {
     parts.push('\n待确认问题:');
-    doc.openQuestions.forEach((q, i) => parts.push(`  ${i + 1}. ${q}`));
+    openQuestions.forEach((q, i) => parts.push(`  ${i + 1}. ${q}`));
   }
 
   if (doc.suggestedNextStep === 'generate-design') {

@@ -36,6 +36,7 @@ export function getSkill(name: string): SkillDefinition | undefined {
 
 export { runSkillThroughLlm, extractJson, type AgentRunResult } from './agent-runner';
 export { chatCompletion, loadLlmConfigFromEnv, type LlmConfig, type LlmCallResult } from './llm-client';
+export { extractRequirementInfo, mergeDocument, type ExtractedInfo } from './requirement-extractor';
 export { requirementAnalysisSkill } from './skills/requirement-analysis';
 export { targetProfileSelectionSkill } from './skills/target-profile-selection';
 export { pagePlanningSkill } from './skills/page-planning';

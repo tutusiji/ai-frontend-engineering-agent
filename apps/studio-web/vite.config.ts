@@ -1,10 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import UnoCSS from 'unocss/vite';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [
-    UnoCSS(),
+    tailwindcss(),
     react(),
   ],
   server: {

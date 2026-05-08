@@ -1,3 +1,6 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+
 /* Blinking cursor for streaming text */
 @keyframes blink {
   0%, 50% { opacity: 1; }

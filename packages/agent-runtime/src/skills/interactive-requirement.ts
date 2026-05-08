@@ -78,12 +78,32 @@ export const interactiveRequirementSkill: SkillDefinition = {
     const existingDoc = input.existingDocument as JsonObject | undefined;
     const mode = String(input.mode ?? 'gather'); // gather | refine | score
 
+    // Compress history: strip JSON from assistant messages to save tokens
+    // The existing document is sent separately, so we don't need JSON in history
+    const compressMessage = (m: { role: string; content: string }): string => {
+      if (m.role === 'assistant') {
+        // Remove JSON code blocks from assistant messages
+        let text = m.content.replace(/```[\s\S]*?```/g, '').trim();
+        // Also remove raw JSON blocks (starts with { and ends with })
+        text = text.replace(/\n?\{[\s\S]*"featureName"[\s\S]*\}/g, '').trim();
+        if (text.length < 20) {
+          // If only JSON was there, summarize
+          const compMatch = m.content.match(/"completeness"\s*:\s*(\d+)/);
+          const comp = compMatch ? compMatch[1] : '?';
+          return `[assistant]: (已更新需求文档，completeness=${comp}%)`;
+        }
+        return `[assistant]: ${text}`;
+      }
+      return `[${m.role}]: ${m.content}`;
+    };
+    
     const historyText = conversationHistory.length > 0
-      ? conversationHistory.map(m => `[${m.role}]: ${m.content}`).join('\n')
+      ? conversationHistory.map(compressMessage).join('\n')
       : '（首次对话）';
 
+    // Use plain text summary instead of JSON to avoid triggering JSON output
     const existingDocText = existingDoc
-      ? `\n当前需求文档:\n${JSON.stringify(existingDoc, null, 2)}`
+      ? `\n当前需求进展：${summarizeDocPlain(existingDoc)}`
       : '';
 
     const modeInstructions = getModeInstructions(mode);
@@ -93,98 +113,35 @@ export const interactiveRequirementSkill: SkillDefinition = {
 
 ${modeInstructions}
 
-## 输出格式
+## 你的职责
 
-你必须输出一个合法的 JSON 对象，结构如下：
+你是一个对话式需求分析师。你的唯一职责是通过对话帮助用户梳理需求。
 
-{
-  "featureName": "功能名称",
-  "businessGoal": "业务背景和目标（2-3句话）",
-  "userRoles": [
-    { "name": "角色名", "description": "角色描述", "permissions": ["权限1"] }
-  ],
-  "pages": [
-    {
-      "name": "页面名称",
-      "goal": "页面目标",
-      "pageType": "list|form|detail|dashboard|modal|drawer|tab|wizard",
-      "sections": ["页面区域1", "页面区域2"],
-      "actions": ["用户操作1"],
-      "fields": [
-        { "name": "字段名", "type": "string|number|boolean|date|enum", "required": true, "description": "描述" }
-      ],
-      "interactions": ["交互规则1"]
-    }
-  ],
-  "entities": [
-    {
-      "name": "实体名",
-      "fields": [
-        { "name": "字段名", "type": "string|number|boolean|date", "required": true, "description": "描述" }
-      ]
-    }
-  ],
-  "businessRules": ["业务规则1", "业务规则2"],
-  "edgeCases": ["边界case1", "边界case2"],
-  "nonFunctional": ["非功能需求1"],
-  "phases": [
-    { "id": "P1", "name": "阶段名称", "pages": ["页面名1"], "priority": "核心/重要/可选" }
-  ],
-  "completeness": 75,
-  "openQuestions": ["待确认问题1"],
-  "suggestedNextStep": "continue-gathering"
-}
+**你不需要输出 JSON 文档。** 文档更新由系统自动处理，你只需要专注于对话。
 
-## 评分维度 (completeness 计算)
+### 对话原则
 
-满分 100，按以下维度评分：
-- 功能名称 + 业务目标 (8分)
-- 用户角色定义 (8分)
-- UI 组件库选择 (9分) — 是否选定了具体 UI 库
-- 页面定义完整性 (25分) — 每个页面是否有 goal、sections、actions、fields、interactions
-- 数据实体定义 (15分) — 字段是否完整、类型是否明确
-- 业务规则 (12分) — 是否有明确的业务约束
-- 边界 case (8分) — 异常情况是否考虑
-- 非功能需求 (5分)
-- 阶段拆分 (10分) — 是否有合理的 P1/P2/P3 规划
+1. **确认回答** — 用户回答后，简要确认（"好的，已了解"），然后继续下一个问题
+2. **深入追问** — 对模糊的回答要追问细节（"你说的xxx具体是指？"）
+3. **覆盖全面** — 按以下维度逐步梳理，不要遗漏：
+   - 功能范围和业务目标
+   - 用户角色和权限
+   - 页面结构（每个页面的功能、字段、交互）
+   - 数据实体和字段定义
+   - 业务规则和约束
+   - 边界情况和异常处理
+   - UI 组件库偏好
+   - 技术栈偏好
+4. **自然对话** — 像产品经理和用户聊天一样，不要像问卷调查
+5. **适时总结** — 每讨论完一个维度，总结一下已确认的内容
+6. **简洁高效** — 每次回复控制在 150 字以内
 
-## UI 组件库选择
+### 回复格式
 
-在需求收集阶段，一定要帮用户选定 UI 组件库。可选列表：
-
-Vue3 项目:
-- element-plus — Element Plus，管理后台标配，中文生态最好
-- ant-design-vue — Ant Design Vue，企业级设计语言
-- naive-ui — Naive UI，TypeScript 优先，主题定制灵活
-- vuetify — Vuetify 3，Material Design 风格
-- arco-design-vue — Arco Design Vue，字节出品，配置化表格强
-
-React 项目:
-- antd — Ant Design，最流行的 React 企业级 UI 库
-- arco-design-react — Arco Design，字节出品，配置化能力强
-- heroui — HeroUI，Tailwind CSS 原生，动效出色
-
-如果用户没有明确偏好，根据项目类型推荐：
-- 管理后台 → element-plus (Vue) 或 antd (React)
-- 注重设计 → arco-design 或 heroui
-- 高度定制 → naive-ui (Vue) 或 heroui (React)
-
-uiLibrary 字段格式:
-{
-  "id": "库的 npm id",
-  "name": "显示名称",
-  "npmPackage": "npm 包名",
-  "componentMapping": { "button": "ElButton", "form": "ElForm", "table": "ElTable", "dialog": "ElDialog" },
-  "styling": ["tailwindcss", "css"]
-}
-
-## 关键原则
-
-1. 不要猜测 — 如果用户没说清楚，就放进 openQuestions 问出来
-2. 每次至少提出 2-3 个有价值的追问
-3. 阶段拆分要合理 — P1 是最小可用版本，后续阶段逐步增强
-4. 交互规则要具体 — "列表需要 loading" 比 "体验要好" 有用得多
-5. 字段类型要精确 — "日期用 date，金额用 number" 而不是都用 string`,
+直接回复文字即可，不要输出 JSON、代码块或结构化数据。
+例如：
+- "好的，React + SSR 确认。接下来想了解一下页面结构，你设想有哪些页面？"
+- "明白了，用户分三种角色。关于权限这块，管理员能做哪些操作？"`,
 
       user: `对话历史:
 ${historyText}
@@ -242,6 +199,26 @@ function normalizePage(page: unknown): JsonObject {
   };
 }
 
+function summarizeDocPlain(doc: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (doc.featureName) parts.push(`功能「${doc.featureName}」`);
+  if (doc.businessGoal) parts.push(`目标: ${String(doc.businessGoal).slice(0, 80)}`);
+  if (doc.uiLibrary) {
+    const lib = typeof doc.uiLibrary === 'object' ? (doc.uiLibrary as Record<string, unknown>).name : doc.uiLibrary;
+    parts.push(`UI库: ${lib}`);
+  }
+  const pages = Array.isArray(doc.pages) ? doc.pages : [];
+  if (pages.length > 0) parts.push(`已确认${pages.length}个页面`);
+  const entities = Array.isArray(doc.entities) ? doc.entities : [];
+  if (entities.length > 0) parts.push(`${entities.length}个实体`);
+  const rules = Array.isArray(doc.businessRules) ? doc.businessRules : [];
+  if (rules.length > 0) parts.push(`${rules.length}条规则`);
+  const questions = Array.isArray(doc.openQuestions) ? doc.openQuestions : [];
+  if (questions.length > 0) parts.push(`还有${questions.length}个待确认问题`);
+  if (doc.completeness !== undefined) parts.push(`完整度${doc.completeness}%`);
+  return parts.join('，') || '尚未开始收集';
+}
+
 function getModeInstructions(mode: string): string {
   switch (mode) {
     case 'gather':
@@ -251,7 +228,7 @@ function getModeInstructions(mode: string): string {
 - 如果是首次对话，先理解用户的核心意图，然后有针对性地追问
 - 如果已有部分需求，检查缺失维度，主动提问补齐
 - 每次回复至少提出 2-3 个有价值的追问
-- 逐步构建需求文档，每次更新都给出最新的完整文档`;
+- 逐步收集需求信息，每次确认后继续下一个维度`;
 
     case 'refine':
       return `## 模式：需求细化
@@ -260,7 +237,7 @@ function getModeInstructions(mode: string): string {
 - 根据用户的反馈修改对应部分
 - 保持用户未提及的部分不变
 - 如果修改引入了新的不确定性，放进 openQuestions
-- 每次修改后给出更新后的完整文档`;
+- 确认修改后继续讨论下一个待确认项`;
 
     case 'score':
       return `## 模式：需求评估

@@ -106,6 +106,16 @@ export function extractJson(text: string): JsonObject | null {
   if (fenced?.[1]) {
     const parsed = tryParse(fenced[1].trim());
     if (parsed) return parsed;
+    // Fence content might be truncated — try repair
+    const repairedFenced = tryRepairJson(fenced[1].trim());
+    if (repairedFenced) return repairedFenced;
+  }
+
+  // Try incomplete fence (truncated before closing ```)
+  const incompleteFence = text.match(/```(?:json)?\s*\n?([\s\S]+)/);
+  if (incompleteFence?.[1]) {
+    const repaired = tryRepairJson(incompleteFence[1].trim());
+    if (repaired) return repaired;
   }
 
   // Try finding the first { ... } block
@@ -114,6 +124,10 @@ export function extractJson(text: string): JsonObject | null {
     const parsed = tryParse(braceMatch[0]);
     if (parsed) return parsed;
   }
+
+  // Last resort: try to repair truncated JSON
+  const repaired = tryRepairJson(text);
+  if (repaired) return repaired;
 
   return null;
 }
@@ -128,4 +142,79 @@ function tryParse(text: string): JsonObject | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Attempt to repair a truncated JSON string (e.g. from LLM token limit).
+ * Strategy: strip trailing partial values, close open brackets.
+ */
+function tryRepairJson(text: string): JsonObject | null {
+  let s = text.trimEnd();
+
+  // 1. If inside a string, close it (find last unescaped ")
+  const openQuoteIdx = findLastUnclosedQuote(s);
+  if (openQuoteIdx !== -1) {
+    s = s.slice(0, openQuoteIdx);
+  }
+
+  // 2. Remove trailing comma (possibly with whitespace/newlines)
+  s = s.replace(/,(\s*)$/, '$1');
+
+  // 3. Close all open [ and { (track depth)
+  const openBrackets: string[] = [];
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '"') {
+      // Skip string content
+      const end = findClosingQuote(s, i + 1);
+      if (end !== -1) i = end;
+    } else if (ch === '{') {
+      openBrackets.push('}');
+    } else if (ch === '[') {
+      openBrackets.push(']');
+    } else if (ch === '}' || ch === ']') {
+      openBrackets.pop();
+    }
+  }
+  // Close in reverse order
+  while (openBrackets.length > 0) {
+    s += openBrackets.pop();
+  }
+
+  // 4. Try parsing
+  return tryParse(s);
+}
+
+/** Find the closing quote for a string starting at pos (after opening quote). */
+function findClosingQuote(s: string, start: number): number {
+  for (let i = start; i < s.length; i++) {
+    if (s[i] === '\\') {
+      i++; // skip escaped char
+    } else if (s[i] === '"') {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/** Find the position of the last unclosed " in the string. */
+function findLastUnclosedQuote(s: string): number {
+  let lastQuote = -1;
+  let inString = false;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '"') {
+      if (!inString) {
+        inString = true;
+        lastQuote = i;
+      } else {
+        // Check if escaped
+        let backslashes = 0;
+        for (let j = i - 1; j >= 0 && s[j] === '\\'; j--) backslashes++;
+        if (backslashes % 2 === 0) {
+          inString = false;
+        }
+      }
+    }
+  }
+  return inString ? lastQuote : -1;
 }

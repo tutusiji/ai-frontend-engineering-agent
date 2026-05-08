@@ -3,32 +3,25 @@
  */
 
 import { useState } from 'react';
+import { Button } from '@heroui/react/button';
+import { Input } from '@heroui/react/input';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@heroui/react/tooltip';
+import { Chip } from '@heroui/react/chip';
+import { ProgressBar } from '@heroui/react/progress-bar';
+import { Separator } from '@heroui/react/separator';
+import { Text } from '@heroui/react/text';
 import {
-  Button,
-  List,
-  Tag,
-  Progress,
-  Popconfirm,
-  Input,
-  Tooltip,
-  Typography,
-  Space,
-  Divider,
-} from 'antd';
-import {
-  PlusOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  CheckOutlined,
-  CloseOutlined,
-  MessageOutlined,
-  ThunderboltOutlined,
-  HistoryOutlined,
-  AppstoreOutlined,
-} from '@ant-design/icons';
+  Plus,
+  Trash2,
+  Pencil,
+  Check,
+  X,
+  MessageSquare,
+  Zap,
+  History,
+  LayoutGrid,
+} from 'lucide-react';
 import type { Session } from '../hooks/useSessions';
-
-const { Text } = Typography;
 
 type NavKey = 'chat' | 'workflows' | 'history';
 
@@ -68,139 +61,158 @@ export function Sidebar({
     setEditingId(null);
   };
 
+  const handleDelete = (id: string) => {
+    if (window.confirm('确认删除?')) {
+      onDeleteSession(id);
+    }
+  };
+
   return (
-    <div style={{ width: 280, background: '#fafafa', borderRight: '1px solid #e8e8e8', display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="w-[280px] bg-[#fafafa] border-r border-[#e8e8e8] flex flex-col h-full">
       {/* Navigation */}
-      <div style={{ padding: '12px 12px 0' }}>
-        <Space direction="vertical" style={{ width: '100%' }} size={4}>
+      <div className="px-3 pt-3">
+        <div className="flex flex-col gap-1">
           <Button
-            block
-            type={activeNav === 'chat' ? 'primary' : 'text'}
-            icon={<MessageOutlined />}
-            onClick={() => onNavigate('chat')}
-            style={{ textAlign: 'left', justifyContent: 'flex-start' }}
+            variant={activeNav === 'chat' ? 'primary' : 'ghost'}
+            className="w-full justify-start"
+            onPress={() => onNavigate('chat')}
           >
-            需求对话
+            <MessageSquare size={16} className="inline mr-1.5" /> 需求对话
           </Button>
           <Button
-            block
-            type={activeNav === 'workflows' ? 'primary' : 'text'}
-            icon={<AppstoreOutlined />}
-            onClick={() => onNavigate('workflows')}
-            style={{ textAlign: 'left', justifyContent: 'flex-start' }}
+            variant={activeNav === 'workflows' ? 'primary' : 'ghost'}
+            className="w-full justify-start"
+            onPress={() => onNavigate('workflows')}
           >
-            工作流
+            <LayoutGrid size={16} className="inline mr-1.5" /> 工作流
           </Button>
           <Button
-            block
-            type={activeNav === 'history' ? 'primary' : 'text'}
-            icon={<HistoryOutlined />}
-            onClick={() => onNavigate('history')}
-            style={{ textAlign: 'left', justifyContent: 'flex-start' }}
+            variant={activeNav === 'history' ? 'primary' : 'ghost'}
+            className="w-full justify-start"
+            onPress={() => onNavigate('history')}
           >
-            运行历史
+            <History size={16} className="inline mr-1.5" /> 运行历史
           </Button>
-        </Space>
+        </div>
       </div>
 
-      <Divider style={{ margin: '8px 0' }} />
+      <Separator className="my-2" />
 
       {/* Session list header */}
       {activeNav === 'chat' && (
         <>
-          <div style={{ padding: '0 12px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text strong style={{ fontSize: 12, color: '#888' }}>会话列表</Text>
-            <Tooltip title="新建会话">
-              <Button type="text" size="small" icon={<PlusOutlined />} onClick={onCreateSession} />
+          <div className="flex items-center justify-between px-3 pb-2">
+            <Text className="text-xs text-[#888] font-semibold">会话列表</Text>
+            <Tooltip>
+              <TooltipTrigger>
+                <Button isIconOnly variant="ghost" size="sm" onPress={onCreateSession}>
+                  <Plus size={16} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>新建会话</TooltipContent>
             </Tooltip>
           </div>
 
           {/* Sessions */}
-          <div style={{ flex: 1, overflow: 'auto', padding: '0 8px' }}>
-            <List
-              size="small"
-              dataSource={sessions}
-              renderItem={s => (
-                <div
-                  key={s.id}
-                  onClick={() => onSelectSession(s.id)}
-                  style={{
-                    padding: '8px 10px',
-                    marginBottom: 4,
-                    borderRadius: 8,
-                    cursor: 'pointer',
-                    background: activeSessionId === s.id ? '#e6f4ff' : '#fff',
-                    border: activeSessionId === s.id ? '1px solid #91caff' : '1px solid transparent',
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    {editingId === s.id ? (
+          <div className="flex-1 overflow-auto px-2">
+            {sessions.map((s) => (
+              <div
+                key={s.id}
+                onClick={() => onSelectSession(s.id)}
+                className={`px-2.5 py-2 mb-1 rounded-lg cursor-pointer transition-all ${
+                  activeSessionId === s.id
+                    ? 'bg-blue-50 border border-blue-300'
+                    : 'bg-white border border-transparent hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  {editingId === s.id ? (
+                    <div className="flex items-center gap-1 flex-1">
                       <Input
-                        size="small"
+                        className="text-sm flex-1"
                         value={editName}
-                        onChange={e => setEditName(e.target.value)}
-                        onPressEnter={confirmEdit}
+                        onChange={(e) => setEditName((e.target as HTMLInputElement).value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') confirmEdit();
+                        }}
                         onBlur={confirmEdit}
-                        onClick={e => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
                         autoFocus
-                        suffix={
-                          <Space size={2}>
-                            <CheckOutlined style={{ color: '#52c41a', cursor: 'pointer' }} onClick={confirmEdit} />
-                            <CloseOutlined style={{ color: '#999', cursor: 'pointer' }} onClick={() => setEditingId(null)} />
-                          </Space>
-                        }
                       />
-                    ) : (
-                      <>
-                        <Text strong style={{ fontSize: 13, flex: 1 }} ellipsis>{s.name}</Text>
-                        <Space size={2}>
-                          <Tooltip title="重命名">
+                      <button
+                        className="text-green-500 cursor-pointer hover:text-green-600"
+                        onClick={(e) => { e.stopPropagation(); confirmEdit(); }}
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        className="text-gray-400 cursor-pointer hover:text-gray-600"
+                        onClick={(e) => { e.stopPropagation(); setEditingId(null); }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <Text className="text-[13px] font-semibold flex-1 truncate">{s.name}</Text>
+                      <div className="flex gap-0.5">
+                        <Tooltip>
+                          <TooltipTrigger>
                             <Button
-                              type="text"
-                              size="small"
-                              icon={<EditOutlined style={{ fontSize: 11 }} />}
-                              onClick={e => { e.stopPropagation(); startEdit(s); }}
-                            />
-                          </Tooltip>
-                          <Popconfirm title="确认删除?" onConfirm={() => onDeleteSession(s.id)} onCancel={e => e?.stopPropagation()}>
-                            <Button
-                              type="text"
-                              size="small"
-                              danger
-                              icon={<DeleteOutlined style={{ fontSize: 11 }} />}
-                              onClick={e => e.stopPropagation()}
-                            />
-                          </Popconfirm>
-                        </Space>
-                      </>
-                    )}
-                  </div>
-
-                  {s.featureName && (
-                    <Text style={{ fontSize: 11, color: '#666' }} ellipsis>{s.featureName}</Text>
+                              isIconOnly
+                              variant="ghost"
+                              size="sm"
+                              onPress={() => { startEdit(s); }}
+                            >
+                              <Pencil size={11} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>重命名</TooltipContent>
+                        </Tooltip>
+                        <Button
+                          isIconOnly
+                          variant="danger-soft"
+                          size="sm"
+                          onPress={() => handleDelete(s.id)}
+                        >
+                          <Trash2 size={11} />
+                        </Button>
+                      </div>
+                    </>
                   )}
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                    <Progress
-                      percent={s.completeness}
-                      size="small"
-                      style={{ flex: 1, marginBottom: 0 }}
-                      strokeColor={s.completeness >= 80 ? '#52c41a' : '#1677ff'}
-                    />
-                    <Tag style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>
-                      {s.messageCount}条
-                    </Tag>
-                  </div>
                 </div>
-              )}
-            />
+
+                {s.featureName && (
+                  <Text className="text-[11px] text-[#666] truncate">{s.featureName}</Text>
+                )}
+
+                <div className="flex items-center gap-2 mt-1">
+                  <ProgressBar
+                    value={Number(s.completeness) || 0}
+                    size="sm"
+                    className="flex-1"
+                    color={s.completeness >= 80 ? 'success' : 'default'}
+                    aria-label="Session completeness"
+                  />
+                  <Chip size="sm" variant="soft" className="text-[10px] h-4 px-1">
+                    {s.messageCount}条
+                  </Chip>
+                </div>
+              </div>
+            ))}
 
             {sessions.length === 0 && (
-              <div style={{ textAlign: 'center', padding: 24, color: '#999' }}>
-                <MessageOutlined style={{ fontSize: 32, marginBottom: 8 }} />
-                <div style={{ fontSize: 12 }}>暂无会话</div>
-                <Button type="link" size="small" onClick={onCreateSession}>创建第一个</Button>
+              <div className="text-center py-6 text-gray-400">
+                <MessageSquare size={32} className="mx-auto mb-2" />
+                <div className="text-xs">暂无会话</div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onPress={onCreateSession}
+                  className="mt-1"
+                >
+                  创建第一个
+                </Button>
               </div>
             )}
           </div>

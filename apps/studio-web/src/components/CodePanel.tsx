@@ -3,8 +3,9 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { List, Tag, Typography, Empty } from 'antd';
-import { CodeOutlined, FileOutlined } from '@ant-design/icons';
+import { Chip } from '@heroui/react/chip';
+import { Text } from '@heroui/react/text';
+import { Code, File } from 'lucide-react';
 import Prism from 'prismjs';
 import 'prismjs/components/prism-typescript';
 import 'prismjs/components/prism-jsx';
@@ -15,8 +16,6 @@ import 'prismjs/components/prism-yaml';
 import 'prismjs/components/prism-markdown';
 import 'prismjs/components/prism-bash';
 import 'prismjs/themes/prism-tomorrow.css';
-
-const { Text } = Typography;
 
 interface CodeFile {
   path: string;
@@ -46,6 +45,21 @@ function getLanguage(filePath: string): string {
   return map[ext] ?? 'typescript';
 }
 
+function kindChipColor(kind: string): "accent" | "success" | "default" | "warning" | "danger" {
+  const map: Record<string, "accent" | "success" | "default" | "warning" | "danger"> = {
+    view: 'accent',
+    page: 'accent',
+    component: 'success',
+    composable: 'default',
+    hook: 'default',
+    api: 'warning',
+    test: 'danger',
+    type: 'accent',
+    style: 'default',
+  };
+  return map[kind] ?? 'default';
+}
+
 function HighlightedCode({ code, language }: { code: string; language: string }) {
   const codeRef = useRef<HTMLElement>(null);
 
@@ -56,14 +70,7 @@ function HighlightedCode({ code, language }: { code: string; language: string })
   }, [code, language]);
 
   return (
-    <pre style={{
-      margin: 0,
-      padding: 16,
-      background: '#1e1e1e',
-      borderRadius: 0,
-      fontSize: 13,
-      lineHeight: 1.6,
-    }}>
+    <pre className="m-0 p-4 bg-[#1e1e1e] text-[13px] leading-relaxed">
       <code ref={codeRef} className={`language-${language}`}>
         {code}
       </code>
@@ -76,64 +83,68 @@ export function CodePanel({ files }: { files: CodeFile[] }) {
 
   if (files.length === 0) {
     return (
-      <Empty
-        image={<CodeOutlined style={{ fontSize: 64, color: '#bbb' }} />}
-        description='需求完整度达到 95% 后，点击"代码"按钮生成'
-        style={{ padding: 60 }}
-      />
+      <div className="flex flex-col items-center justify-center gap-4 p-16">
+        <Code size={64} className="text-default-400" />
+        <Text className="text-default-500">
+          {'需求完整度达到 95% 后，点击"代码"按钮生成'}
+        </Text>
+      </div>
     );
   }
 
-  const currentFile = files.find(f => f.path === selectedFile);
+  const currentFile = files.find((f) => f.path === selectedFile);
 
   return (
-    <div style={{ display: 'flex', height: '100%' }}>
+    <div className="flex h-full">
       {/* File tree */}
-      <div style={{ width: 280, borderRight: '1px solid #f0f0f0', overflow: 'auto', padding: 8 }}>
-        <div style={{ padding: '8px 8px 4px', fontSize: 12, color: '#888', fontWeight: 600 }}>
+      <div className="w-[280px] border-r border-divider overflow-auto p-2">
+        <div className="px-2 pt-2 pb-1 text-xs text-default-500 font-semibold">
           📁 文件 ({files.length})
         </div>
-        <List
-          size="small"
-          dataSource={files}
-          renderItem={file => (
-            <List.Item
+        <div className="flex flex-col gap-0.5">
+          {files.map((file) => (
+            <div
+              key={file.path}
               onClick={() => setSelectedFile(file.path)}
-              style={{
-                cursor: 'pointer',
-                background: selectedFile === file.path ? '#e6f4ff' : undefined,
-                padding: '4px 8px',
-                borderRadius: 4,
-                border: 'none',
-              }}
+              className={`flex items-center gap-1.5 cursor-pointer px-2 py-1 rounded-md transition-colors ${
+                selectedFile === file.path
+                  ? 'bg-primary-100'
+                  : 'hover:bg-default-100'
+              }`}
             >
-              <FileOutlined style={{ marginRight: 6, color: kindColor(file.kind) }} />
-              <Tag color={kindColor(file.kind)} style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', margin: 0 }}>
+              <File size={14} className={`text-${kindChipColor(file.kind)}`} />
+              <Chip
+                size="sm"
+                variant="soft"
+                color={kindChipColor(file.kind)}
+                className="text-[10px] h-4 min-w-0 px-1"
+              >
                 {file.kind}
-              </Tag>
-              <Text ellipsis style={{ flex: 1, fontSize: 12 }}>
+              </Chip>
+              <Text className="text-xs truncate flex-1">
                 {file.path.split('/').pop()}
               </Text>
-            </List.Item>
-          )}
-        />
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Code view */}
-      <div style={{ flex: 1, overflow: 'auto', background: '#1e1e1e' }}>
+      <div className="flex-1 overflow-auto bg-[#1e1e1e]">
         {currentFile?.content ? (
           <div>
-            <div style={{
-              padding: '8px 16px',
-              background: '#252526',
-              borderBottom: '1px solid #333',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}>
-              <FileOutlined style={{ color: '#569cd6' }} />
-              <Text style={{ color: '#d4d4d4', fontSize: 12 }}>{currentFile.path}</Text>
-              <Tag style={{ marginLeft: 'auto', fontSize: 10 }}>{getLanguage(currentFile.path)}</Tag>
+            <div className="flex items-center gap-2 px-4 py-2 bg-[#252526] border-b border-[#333]">
+              <File size={14} className="text-[#569cd6]" />
+              <Text className="text-[#d4d4d4] text-xs">
+                {currentFile.path}
+              </Text>
+              <Chip
+                size="sm"
+                variant="soft"
+                className="ml-auto text-[10px] h-4 min-w-0 px-1"
+              >
+                {getLanguage(currentFile.path)}
+              </Chip>
             </div>
             <HighlightedCode
               code={currentFile.content}
@@ -141,27 +152,12 @@ export function CodePanel({ files }: { files: CodeFile[] }) {
             />
           </div>
         ) : (
-          <div style={{ textAlign: 'center', padding: 60, color: '#666' }}>
-            <FileOutlined style={{ fontSize: 48, marginBottom: 16 }} />
+          <div className="flex flex-col items-center justify-center p-16 text-default-500 gap-4">
+            <File size={48} />
             <div>选择文件查看代码</div>
           </div>
         )}
       </div>
     </div>
   );
-}
-
-function kindColor(kind: string): string {
-  const map: Record<string, string> = {
-    view: 'blue',
-    page: 'blue',
-    component: 'green',
-    composable: 'purple',
-    hook: 'purple',
-    api: 'orange',
-    test: 'red',
-    type: 'cyan',
-    style: 'magenta',
-  };
-  return map[kind] ?? 'default';
 }
